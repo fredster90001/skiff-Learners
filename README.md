@@ -697,7 +697,15 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
   ON once on a unit coming from Felucca; DRUM-X's SOUND sheet and FM6's OPERATOR and ALL OPS move their rows with
   SELECT either way
 - **SCALE LEDS:** OFF or ON: the keys show the selected track's scale all the time (the root a little
-  brighter); not on DRUM or SLICE tracks
+  brighter); not on DRUM or SLICE tracks. **Chord lights:** with it ON, three or more notes that make a chord (triads,
+  sus, 6ths, sevenths, ninths; held, played by the sequencer or ARP, or from MIDI IN) light every key of that chord, in
+  every octave, fully, over the scale's glow: chord tones lit, the rest of the scale glowing, the other keys dark. The
+  lowest note decides the root (C-E-G-A is C6 above C, Am7 above A). It stays while part of the chord sounds and 1.5 s
+  after; a note outside it, two notes or no chord, and it goes. INV leaves it out. **The chord's name** shows in the header after
+  the BPM (C, Am7, F#dim, Gsus4) in POP's plain names: a triad or a standard seventh keeps its name, a 6th, a ninth or an
+  add9 shows the triad or seventh it stands on. Its colour says how sure it is: green a clean chord in root position,
+  amber an inversion, a collapsed ninth or a seventh without its fifth, red CLUSTER for three or more notes that are no
+  chord (nothing lights then)
 - **CLOCK:** INT, USB or TRS, where the tempo comes from. **MIDI IN:** CH1-6, channels 1–6 play tracks 1–6 (TRACK
   once one of them is set to another channel), or SEL, every channel the selected track. **TUNE** (AUDIO): the whole
   unit in cents, ±50. The three are the unit's, so loading a project never changes them
