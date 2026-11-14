@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: Python packages
-        run: pip install Pillow
+        run: pip install Pillow fonttools numpy mido
 
       - name: JieLi toolchain
         run: sh tools/get_toolchain.sh
