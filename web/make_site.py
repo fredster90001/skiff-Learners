@@ -24,6 +24,7 @@ model, and the device must report it after the install. Names: skiff-X.Y.fwsc (F
 skiff-X.Y-smk37.fwsc, skiff-X.Y-smk37-elite.fwsc, skiff-X.Y-smk37-mke.fwsc.
 """
 import json
+import os
 import re
 import shutil
 import sys
@@ -75,7 +76,8 @@ def main(pkg, version, out, *more):
         strip_module((HERE / "fm1backup.js").read_text(encoding="utf-8")) + "\n" + \
         strip_module((HERE / "conv" / "conv.js").read_text(encoding="utf-8"))   # ((2.0) its wasm: webapp/editor/conv/
     conv = HERE.parent / "build" / "conv" / "conv.wasm"   # ((2.0, Tier B 10) the converter: web/conv/build.sh's)
-    if not conv.exists():
+    optional = bool(os.environ.get("SITE_OPTIONAL"))   # (a fork's build: no Emscripten for the emulator, maybe none for the converter)
+    if not conv.exists() and not optional:
         raise SystemExit(f"{conv}: no converter build (sh web/conv/build.sh, after the release build)")
     meta = json.dumps({"version": version, "product": product, "pkg": "../../firmware/" + name,
                        "packages": [{"product": p, "pkg": "../../firmware/" + n} for p, _, n in pkgs]})
@@ -112,7 +114,8 @@ def main(pkg, version, out, *more):
         shutil.copy(cast, ed / "felucca_cast.wasm")
     (ed / "conv").mkdir(exist_ok=True)              # ((2.0) the converter: the editor's Restore, the installer's write-back)
     shutil.copy(HERE / "conv" / "conv.js", ed / "conv" / "conv.js")
-    shutil.copy(conv, ed / "conv" / "conv.wasm")
+    if conv.exists():
+        shutil.copy(conv, ed / "conv" / "conv.wasm")
     if (HERE / "fonts").is_dir():                   # ((Skiff 1.0) the editor's Barlow Condensed, its OFL beside it)
         shutil.copytree(HERE / "fonts", ed / "fonts", dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("InterTight*"))   # (the Learn page's, not the editor's)
@@ -122,11 +125,14 @@ def main(pkg, version, out, *more):
     shutil.copytree(HERE / "fonts", out / "fonts", dirs_exist_ok=True)
     emu = HERE.parent / "build" / "emu"             # ((Skiff #18) the browser emulator: web/emu/build.sh's, ../panel.js)
     page = (emu / "index.html").read_text(encoding="utf-8") if (emu / "index.html").exists() else ""
-    if f">v{version}<" not in page:
-        raise SystemExit(f"{emu}: no browser build of v{version} without the preview mark "
-                         "(EMU_PREVIEW=0 sh web/emu/build.sh, after the release build)")
-    shutil.rmtree(out / "try", ignore_errors=True)
-    shutil.copytree(emu, out / "try")
+    if not page and optional:
+        print("site: no browser emulator build (SITE_OPTIONAL): /try/ left out")
+    else:
+        if f">v{version}<" not in page:
+            raise SystemExit(f"{emu}: no browser build of v{version} without the preview mark "
+                             "(EMU_PREVIEW=0 sh web/emu/build.sh, after the release build)")
+        shutil.rmtree(out / "try", ignore_errors=True)
+        shutil.copytree(emu, out / "try")
     (out / "index.html").write_text(
         '<!doctype html><meta charset="utf-8"><title>Skiff</title>'
         '<meta http-equiv="refresh" content="0; url=webapp/installer/">'
