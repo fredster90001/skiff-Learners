@@ -203,9 +203,9 @@ static void draw_head_blocks(void)
             head_group(x, lx + 8);                     /* (#70) stay clear of the BPM */
         if (cl_head) {                                  /* CHORD LIGHTS' badge: the chord's name after the BPM, green /
                                                          * amber / red by how clean it is, where the rest leaves room */
-            char cn[12];
+            char cn[16];
             int32_t room = x - (song.octave ? text_w(&AF_S, "OCT") + 4 + text_w(&AF_M, "+3") + 8 : 0) - (lx + 8);
-            uint32_t cf = cl_head >> 28 & 3u;
+            uint32_t cf = cl_head >> 29 & 3u;
             uint16_t cc = cf == 2u ? RGB(0, 210, 70) : cf == 1u ? RGB(255, 175, 0) : RGB(255, 60, 60);
             cl_head_text(cl_head, cn, sizeof cn);
             if (text_w(&AF_M, cn) <= room) {

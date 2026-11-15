@@ -336,13 +336,21 @@ static uint32_t scale_leds(uint32_t *root)
  * so C-E-G-A is C6 above C, Am7 above A) light it; fewer, or no chord, keep the last chord while what sounds is part of
  * it, then 1.5 s after silence; another note drops it. Pure reading: no state in the sound, nothing saved, INV leaves
  * it out. cl_find is the whole of the recognition (tests/ui_test.c) */
-static const int8_t CL_SHAPE[][6] = {
+/* the shapes: POP uses the first CL_POP_N, JAZZ all of them (a shape's intervals above its root, -1 ends it; the first
+ * match from the bass up wins, so the simpler and the root-position reading first) */
+#define CL_POP_N 23u
+static const int8_t CL_SHAPE[][7] = {
     {0, 4, 7, -1},          {0, 3, 7, -1},         {0, 3, 6, -1},          {0, 4, 8, -1},         {0, 2, 7, -1},
     {0, 5, 7, -1},          {0, 4, 7, 9, -1},      {0, 3, 7, 9, -1},       {0, 4, 7, 10, -1},     {0, 4, 7, 11, -1},
     {0, 3, 7, 10, -1},      {0, 3, 7, 11, -1},     {0, 3, 6, 10, -1},      {0, 3, 6, 9, -1},      {0, 2, 4, 7, -1},
     {0, 2, 3, 7, -1},       {0, 5, 7, 10, -1},     {0, 2, 4, 7, 10, -1},   {0, 2, 4, 7, 11, -1},  {0, 2, 3, 7, 10, -1},
     {0, 4, 10, -1},         {0, 4, 11, -1},        {0, 3, 10, -1},
+    /* JAZZ's own: 6/9, the altered sevenths, the elevenths and thirteenths */
+    {0, 2, 4, 7, 9, -1},    {0, 1, 4, 7, 10, -1},  {0, 3, 4, 7, 10, -1},   {0, 4, 6, 7, 10, -1},  {0, 4, 6, 10, -1},
+    {0, 4, 8, 10, -1},      {0, 4, 6, 7, 11, -1},  {0, 2, 3, 5, 7, 10, -1}, {0, 2, 4, 7, 9, 10, -1}, {0, 2, 4, 7, 9, 11, -1},
+    {0, 2, 5, 7, 10, -1},   {0, 1, 4, 8, 10, -1},  {0, 3, 4, 8, 10, -1},   {0, 2, 4, 6, 7, 11, -1}, {0, 2, 4, 5, 7, 10, -1},
 };
+#define CL_N (sizeof CL_SHAPE / sizeof CL_SHAPE[0])
 static uint32_t cl_pop(uint32_t m)
 {
     uint32_t n = 0;
@@ -350,19 +358,29 @@ static uint32_t cl_pop(uint32_t m)
         n++;
     return n;
 }
-/* the pitch classes pc (bit i: i semitones above C), bass the lowest note's class: the chord they make (1, its root and
- * its shape's index in CL_SHAPE; 0: none). A root is tried from the bass up; the first shape that is exactly the classes wins */
-static uint32_t cl_match(uint32_t pc, uint32_t bass, uint32_t *root, uint32_t *shape)
+enum { CM_POP, CM_JAZZ, CM_FIG, CM_N };                 /* CHORD MODE (MENU > CONTROL), and the shape that says FIGURED */
+#define CL_FIG 62u                                      /* (a head value's shape: FIGURED BASS, the intervals; 63 a cluster) */
+#define CL_CLUSTER 63u
+/* the pitch classes pc (bit i: i semitones above C), bass the lowest note's class, cm the CHORD MODE: the chord they
+ * make (1, its root and its shape's index in CL_SHAPE; 0: none). A root is tried from the bass up; the first shape that
+ * is exactly the classes wins. POP: 3..5 classes of the first CL_POP_N shapes; JAZZ: 3..7 of all; FIGURED BASS: no
+ * dictionary, any 3 or more classes are a figure (the bass is its root) */
+static uint32_t cl_match(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t *root, uint32_t *shape)
 {
-    uint32_t i, j, r, m, n = cl_pop(pc);
-    if (n < 3u || n > 5u)
+    uint32_t i, j, r, m, n = cl_pop(pc), nsh = cm == CM_POP ? CL_POP_N : (uint32_t)CL_N;
+    if (n < 3u || n > (cm == CM_POP ? 5u : cm == CM_JAZZ ? 7u : 12u))
         return 0;
+    if (cm == CM_FIG) {
+        *root = bass;
+        *shape = CL_FIG;
+        return 1;
+    }
     for (i = 0; i < 12u; i++) {
         r = (bass + i) % 12u;
         if (!((pc >> r) & 1u))
             continue;
         m = (pc >> r | pc << (12u - r)) & 0xFFFu;       /* the classes as intervals above r */
-        for (j = 0; j < sizeof CL_SHAPE / sizeof CL_SHAPE[0]; j++) {
+        for (j = 0; j < nsh; j++) {
             uint32_t s = 0, q;
             for (q = 0; CL_SHAPE[j][q] >= 0; q++)
                 s |= 1u << CL_SHAPE[j][q];
@@ -375,40 +393,105 @@ static uint32_t cl_match(uint32_t pc, uint32_t bass, uint32_t *root, uint32_t *s
     }
     return 0;
 }
-static uint32_t cl_find(uint32_t pc, uint32_t bass)     /* the same classes if they make a chord, else 0 */
+static uint32_t cl_find(uint32_t pc, uint32_t bass)     /* (POP) the same classes if they make a chord, else 0 */
 {
     uint32_t r, j;
-    return cl_match(pc, bass, &r, &j) ? pc : 0u;
+    return cl_match(pc, bass, CM_POP, &r, &j) ? pc : 0u;
 }
-/* CHORD NAME (POP): the name's ending per shape, and whether POP collapses the shape to a plainer one (6, m6, add9, madd9,
- * sus7, 9ths and m(maj7) become the triad or 7th they stand on: yellow), or the shape is a shell of a seventh (no fifth:
- * yellow too). Triads and the standard sevenths keep their name; sus2 / sus4 are kept (a sus is no major or minor) */
-static const struct { const char *suf; uint8_t soft; } CL_POP[23] = {
+/* the name's ending per shape. POP collapses some to a plainer one (6, m6, add9, madd9, sus7, 9ths and m(maj7) become
+ * the triad or 7th they stand on: yellow) and a shell of a seventh (no fifth) is yellow too; triads and the standard
+ * sevenths keep their name; sus2 / sus4 are kept (a sus is no major or minor). JAZZ names every shape as it is */
+static const struct { const char *suf; uint8_t soft; } CL_POP[CL_POP_N] = {
     {"", 0},      {"m", 0},     {"dim", 0},  {"aug", 0},  {"sus2", 0},  {"sus4", 0},  {"", 1},       {"m", 1},
     {"7", 0},     {"maj7", 0},  {"m7", 0},   {"m", 1},    {"m7b5", 0},  {"dim7", 0},  {"", 1},       {"m", 1},
     {"sus4", 1},  {"7", 1},     {"maj7", 1}, {"m7", 1},   {"7", 1},     {"maj7", 1},  {"m7", 1},
 };
-static const char *const CL_ROOT[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-/* what the header's badge shows (0: none): bit 31 set, bits 29..28 the confidence (0 red, 1 yellow, 2 green), 27..23 the
- * shape (31: a cluster), 22..19 the root, 18..15 the lowest note's class; written once a frame by ui_leds, read by the header */
-static uint32_t cl_head_pack(uint32_t root, uint32_t shape, uint32_t bass)
+static const char *const CL_JAZZ[CL_N] = {
+    "", "m", "dim", "aug", "sus2", "sus4", "6", "m6", "7", "maj7", "m7", "m(maj7)", "m7b5", "dim7", "add9", "m(add9)",
+    "7sus4", "9", "maj9", "m9", "7", "maj7", "m7", "6/9", "7b9", "7#9", "7#11", "7b5", "7#5", "maj7#11", "m11", "13",
+    "maj13", "9sus4", "7alt", "7alt", "maj9#11", "11",
+};
+static const char *const CL_SHARP[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+static const char *const CL_FLAT[12] = {"C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"};
+/* CHORD NAMES (MENU > CONTROL): AUTO, SHARPS, FLATS; AUTO by the selected track's key (ROOT, SCALE): the key signature of
+ * its major (a scale with a minor third: its relative major, 3 up) has flats: F, Bb, Eb, Ab, Db; the others sharps */
+static uint32_t cl_flats(const track_t *t)
 {
-    uint32_t conf;
-    if (shape >= 23u)
-        return 1u << 31 | 0u << 28 | 31u << 23 | bass % 12u << 15;                  /* a cluster: red */
-    conf = CL_POP[shape].soft || shape >= 20u || root != bass % 12u ? 1u : 2u;     /* yellow: collapsed, a shell, an inversion */
-    return 1u << 31 | conf << 28 | shape << 23 | root << 19 | bass % 12u << 15;
+    uint32_t nm = ch_names(), mask, rel;
+    if (nm)
+        return nm == 2u;
+    mask = scale_mask(t);
+    rel = ((uint32_t)t->p[P_ROOT] + ((mask >> 3 & 1u) && !(mask >> 4 & 1u) ? 3u : 0u)) % 12u;
+    return (0x52Au >> rel) & 1u;                        /* 1, 3, 5, 8, 10: Db Eb F Ab Bb */
+}
+/* FIGURED BASS: the intervals above the bass as the figures: classes (bit i: i semitones over the bass) -> the numerals
+ * 2..7 present (a minor or major third both 3, a tritone a 5 over a minor third, else a 4), the standard figures in
+ * their usual short form (5/3 6/3 6/4, 7 6/5 4/3 4/2); returns 1 if it is one of those (green), else the numerals
+ * high to low (yellow) */
+static uint32_t cl_fig(uint32_t rel, char *out, uint32_t cap)
+{
+    static const uint8_t NUM[12] = {1, 2, 2, 3, 3, 4, 0, 5, 6, 6, 7, 7};
+    static const struct { uint8_t set; const char *name; } STD[] = {
+        {1u << 3 | 1u << 5, "5/3"},          {1u << 3 | 1u << 6, "6/3"},          {1u << 4 | 1u << 6, "6/4"},
+        {1u << 3 | 1u << 5 | 1u << 7, "7"},  {1u << 3 | 1u << 5 | 1u << 6, "6/5"}, {1u << 3 | 1u << 4 | 1u << 6, "4/3"},
+        {1u << 2 | 1u << 4 | 1u << 6, "4/2"},
+    };
+    uint32_t set = 0, i, n = 0;
+    char *o = out;
+    for (i = 1; i < 12u; i++)
+        if ((rel >> i) & 1u)
+            set |= 1u << (i == 6u ? ((rel >> 3 & 1u) ? 5u : 4u) : NUM[i]);
+    for (i = 0; i < sizeof STD / sizeof STD[0]; i++)
+        if (STD[i].set == set) {
+            if (out)
+                str_cpy(out, STD[i].name, cap);
+            return 1;
+        }
+    for (i = 7; i >= 2u && out; i--)
+        if (((set >> i) & 1u) && n + 3u < cap) {
+            if (n++)
+                *o++ = '/';
+            *o++ = (char)('0' + i);
+        }
+    if (out)
+        *o = 0;
+    return 0;
+}
+/* what the header's badge shows (0: none): bit 31 set, 30..29 the confidence (0 red, 1 yellow, 2 green), 28..23 the
+ * shape (CL_FIG, CL_CLUSTER), 22..19 the root, 18..15 the lowest note's class, 14..13 the CHORD MODE, 12 flats, 11..0 the
+ * classes over the bass (FIGURED BASS's figures); written once a frame by ui_leds, read by the header */
+static uint32_t cl_head_pack(uint32_t root, uint32_t shape, uint32_t bass, uint32_t cm, uint32_t flats, uint32_t pc)
+{
+    uint32_t conf, rel = (pc >> (bass % 12u) | pc << (12u - bass % 12u)) & 0xFFFu;
+    if (shape == CL_CLUSTER)
+        conf = 0;                                                                      /* a cluster: red */
+    else if (shape == CL_FIG)
+        conf = cl_fig(rel, 0, 0) ? 2u : 1u;                                            /* the usual figures green */
+    else if (cm == CM_POP)
+        conf = CL_POP[shape].soft || shape >= 20u || root != bass % 12u ? 1u : 2u;     /* yellow: collapsed, a shell, an inversion */
+    else
+        conf = (shape >= 20u && shape <= 22u) || root != bass % 12u ? 1u : 2u;         /* JAZZ: a shell, a slash chord */
+    return 1u << 31 | conf << 29 | shape << 23 | root << 19 | bass % 12u << 15 | cm << 13 | flats << 12 | rel;
 }
 /* the badge's text for a cl_head value */
 static void cl_head_text(uint32_t h, char *out, uint32_t cap)
 {
-    uint32_t shape = h >> 23 & 31u;
-    if (shape == 31u) {
+    uint32_t shape = h >> 23 & 63u, root = h >> 19 & 15u, bass = h >> 15 & 15u;
+    const char *const *nm = h >> 12 & 1u ? CL_FLAT : CL_SHARP;
+    if (shape == CL_CLUSTER) {
         str_cpy(out, "CLUSTER", cap);
         return;
     }
-    str_cpy(out, CL_ROOT[h >> 19 & 15u], cap);
-    str_cpy(out + str_len(out), CL_POP[shape].suf, cap - str_len(out));
+    if (shape == CL_FIG) {
+        (void)cl_fig(h & 0xFFFu, out, cap);
+        return;
+    }
+    str_cpy(out, nm[root % 12u], cap);
+    str_cpy(out + str_len(out), (h >> 13 & 3u) == CM_JAZZ ? CL_JAZZ[shape] : CL_POP[shape].suf, cap - str_len(out));
+    if ((h >> 13 & 3u) == CM_JAZZ && root != bass) {    /* JAZZ: a slash chord, the bass after the root's chord */
+        str_cpy(out + str_len(out), "/", cap - str_len(out));
+        str_cpy(out + str_len(out), nm[bass % 12u], cap - str_len(out));
+    }
 }
 /* the pitch classes the track t sounds now (bit i, i = note % 12) and the lowest note (128: none) */
 static uint32_t cl_sounding(const track_t *t, uint32_t *bass)
@@ -445,15 +528,16 @@ static uint32_t cl_sounding(const track_t *t, uint32_t *bass)
 }
 /* the chord lit now, once a frame (pitch classes, 0: none); ms: the clock the 1.5 s run on. cl_info: its root, shape and bass */
 static uint32_t cl_info[3];
-static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t trk, uint32_t ms)
+static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t trk, uint32_t ms)
 {
-    static uint32_t held, at, last_trk;
+    static uint32_t held, at, last_trk, last_cm;
     uint32_t r, j;
-    if (trk != last_trk) {                              /* another track: its own, from nothing */
+    if (trk != last_trk || cm != last_cm) {                              /* another track: its own, from nothing */
         last_trk = trk;
+        last_cm = cm;
         held = 0;
     }
-    if (pc && cl_match(pc, bass % 12u, &r, &j)) {
+    if (pc && cl_match(pc, bass % 12u, cm, &r, &j)) {
         held = pc;
         cl_info[0] = r, cl_info[1] = j, cl_info[2] = bass % 12u;
         at = ms | 1u;
@@ -567,13 +651,13 @@ static void ui_leds(void)
     sc = keys_map ? 0u : scale_leds(&sr);               /* SCALE LEDS: the scale's keys glow, the root's brighter */
     cl_head = 0;
     if (sc && mode != LEDS_INV) {                       /* CHORD LIGHTS: the chord's keys lit, whatever the scale */
-        uint32_t cb, cp = cl_sounding(TSEL, &cb), cl = cl_state(cp, cb, song.sel, fm1_ms), ct = cl_keys(TSEL, cl);
+        uint32_t cb, cm = ch_mode(), cp = cl_sounding(TSEL, &cb), cl = cl_state(cp, cb, cm, song.sel, fm1_ms), ct = cl_keys(TSEL, cl);
         c |= ct;
         sc |= ct;
         if (cl)                                         /* the header's badge: its name, or a cluster (3+ notes, no chord) */
-            cl_head = cl_head_pack(cl_info[0], cl_info[1], cl_info[2]);
+            cl_head = cl_head_pack(cl_info[0], cl_info[1], cl_info[2], cm, cl_flats(TSEL), cl);
         else if (cl_pop(cp) >= 3u)
-            cl_head = cl_head_pack(0, 31, cb);
+            cl_head = cl_head_pack(0, CL_CLUSTER, cb, cm, 0, cp);
     }
     for (k = 0; k < 27u; k++) {
         uint32_t in = (sc >> k) & 1u, rt = (sr >> k) & 1u, idle = !((c >> k) & 1u);

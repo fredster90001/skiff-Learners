@@ -102,6 +102,12 @@ static uint32_t up_gen;                      /* bumped on every user bank change
 #define ui_prefs (favorites.factory[15][30])
 static void cl_head_text(uint32_t h, char *out, uint32_t cap);   /* (ui_input.c) */
 static uint32_t cl_head;                     /* CHORD LIGHTS' badge for the header (ui_input.c cl_head_pack; 0: none) */
+/* (CHORD LIGHTS) MENU > CONTROL > CHORD MODE (bits 0..1: POP JAZZ FIGURED BASS) and CHORD NAMES (bits 2..3: AUTO SHARPS
+ * FLATS): the byte that held MENU > STYLE (retired, Skiff U2), saved with the settings; 0 = POP, AUTO, and a value an
+ * older firmware left there reads as one of them (modulo 3) */
+#define CH_BYTE (favorites.factory[15][29])
+static uint32_t ch_mode(void) { return (CH_BYTE & 3u) % 3u; }
+static uint32_t ch_names(void) { return (CH_BYTE >> 2 & 3u) % 3u; }
 #define PREF_LATCH 1u                          /* (MENU > FX LATCH ON, #40: (Skiff U2) retired, a locked FX layer latches;
                                                 * the bit is left as saved) */
 #define PREF_ANIM_OFF 2u                       /* MENU > ANIM OFF (#46): values snap (no rolling digits, no glide) */
@@ -244,8 +250,8 @@ static void rp_put(uint32_t f, uint32_t v)
     ui_rec_prefs = (uint8_t)((ui_rec_prefs & ~(3u << (2u * f))) | st << (2u * f));
     rp_apply();
 }
-/* (favorites.factory[15][29] held MENU > STYLE, FLAT LINE BLOCKS: (Skiff U2) BLOCKS is the only look, the byte is left
- * as it was saved) */
+/* (favorites.factory[15][29] held MENU > STYLE, FLAT LINE BLOCKS: (Skiff U2) BLOCKS is the only look; CH_BYTE above
+ * has it now) */
 /* (Skiff) the PERFORM layer's KNOB 1, LAUNCH: where a pattern switched to while playing comes in (launch.c LAUNCH_*:
  * LOOP BAR BEAT NOW), a byte no engine uses (favorites.c), saved with the settings; 0 in older settings = LOOP */
 #define ui_launch (favorites.factory[15][26])
