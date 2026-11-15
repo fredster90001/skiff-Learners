@@ -100,6 +100,8 @@ static uint32_t up_gen;                      /* bumped on every user bank change
  * saved with the settings; 0 in older ones = every setting's default (append-only: a new setting takes a new bit,
  * its default is 0) */
 #define ui_prefs (favorites.factory[15][30])
+static void cl_head_text(uint32_t h, char *out, uint32_t cap);   /* (ui_input.c) */
+static uint32_t cl_head;                     /* CHORD LIGHTS' badge for the header (ui_input.c cl_head_pack; 0: none) */
 #define PREF_LATCH 1u                          /* (MENU > FX LATCH ON, #40: (Skiff U2) retired, a locked FX layer latches;
                                                 * the bit is left as saved) */
 #define PREF_ANIM_OFF 2u                       /* MENU > ANIM OFF (#46): values snap (no rolling digits, no glide) */

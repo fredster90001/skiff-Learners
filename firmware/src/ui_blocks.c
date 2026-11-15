@@ -115,7 +115,8 @@ static void draw_head_blocks(void)
           (uint32_t)batt_shown() * 7777u + 0xB10C5u +
           str_hash(9u + (uint32_t)ui.home, head_title(pn)) +   /* (the title) */
           (mark ? str_hash(3u + song.sel, mk) : 0u) + project_mark() * 104729u +
-          (s_n ? s_n * 31u + 240u * s_at / s_n * 7919u + s_k : 0u);
+          (s_n ? s_n * 31u + 240u * s_at / s_n * 7919u + s_k : 0u) +
+          (msg ? 0u : cl_head * 2654435761u);      /* (CHORD LIGHTS' badge) */
     ui.roll_bpm = song.g[G_BPM];                      /* (no rolling digits: none left to finish in another style) */
     ui.roll[ROLL_BPM].from[0] = 0;
     if (!ui.force && sig == ui.head_sig)
@@ -200,6 +201,21 @@ static void draw_head_blocks(void)
         }
         if (song.octave)
             head_group(x, lx + 8);                     /* (#70) stay clear of the BPM */
+        if (cl_head) {                                  /* CHORD LIGHTS' badge: the chord's name after the BPM, green /
+                                                         * amber / red by how clean it is, where the rest leaves room */
+            char cn[12];
+            int32_t room = x - (song.octave ? text_w(&AF_S, "OCT") + 4 + text_w(&AF_M, "+3") + 8 : 0) - (lx + 8);
+            uint32_t cf = cl_head >> 28 & 3u;
+            uint16_t cc = cf == 2u ? RGB(0, 210, 70) : cf == 1u ? RGB(255, 175, 0) : RGB(255, 60, 60);
+            cl_head_text(cl_head, cn, sizeof cn);
+            if (text_w(&AF_M, cn) <= room) {
+                GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
+                cv_text(lx + 8, HEAD_MY, &AF_M, cn, cc);
+            } else if (text_w(&AF_S, cn) <= room) {
+                GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
+                cv_text(lx + 8, HEAD_SY, &AF_S, cn, cc);
+            }
+        }
     }
     if (s_n) {                                        /* ((2.5, the user's 2B) a song playing: the strip, where it is; */
         uint32_t e, x;                                /* a notch at each of its track's entries' ends */

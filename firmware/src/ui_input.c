@@ -329,6 +329,158 @@ static uint32_t scale_leds(uint32_t *root)
     return m;
 }
 
+/* CHORD LIGHTS (with MENU > SCALE LEDS ON): the chord the selected track sounds, found from its notes, lights every key
+ * whose note belongs to it, in every octave, fully (the scale's glow and root stay as they are: three tiers, chord tones
+ * lit, the scale glowing, the rest dark). The notes: the keys held (a chord key's tones too), the sequencer's and the
+ * ARP's, MIDI IN's. At least three different pitch classes that make a chord from one of them (the lowest note's first,
+ * so C-E-G-A is C6 above C, Am7 above A) light it; fewer, or no chord, keep the last chord while what sounds is part of
+ * it, then 1.5 s after silence; another note drops it. Pure reading: no state in the sound, nothing saved, INV leaves
+ * it out. cl_find is the whole of the recognition (tests/ui_test.c) */
+static const int8_t CL_SHAPE[][6] = {
+    {0, 4, 7, -1},          {0, 3, 7, -1},         {0, 3, 6, -1},          {0, 4, 8, -1},         {0, 2, 7, -1},
+    {0, 5, 7, -1},          {0, 4, 7, 9, -1},      {0, 3, 7, 9, -1},       {0, 4, 7, 10, -1},     {0, 4, 7, 11, -1},
+    {0, 3, 7, 10, -1},      {0, 3, 7, 11, -1},     {0, 3, 6, 10, -1},      {0, 3, 6, 9, -1},      {0, 2, 4, 7, -1},
+    {0, 2, 3, 7, -1},       {0, 5, 7, 10, -1},     {0, 2, 4, 7, 10, -1},   {0, 2, 4, 7, 11, -1},  {0, 2, 3, 7, 10, -1},
+    {0, 4, 10, -1},         {0, 4, 11, -1},        {0, 3, 10, -1},
+};
+static uint32_t cl_pop(uint32_t m)
+{
+    uint32_t n = 0;
+    for (; m; m &= m - 1u)
+        n++;
+    return n;
+}
+/* the pitch classes pc (bit i: i semitones above C), bass the lowest note's class: the chord they make (1, its root and
+ * its shape's index in CL_SHAPE; 0: none). A root is tried from the bass up; the first shape that is exactly the classes wins */
+static uint32_t cl_match(uint32_t pc, uint32_t bass, uint32_t *root, uint32_t *shape)
+{
+    uint32_t i, j, r, m, n = cl_pop(pc);
+    if (n < 3u || n > 5u)
+        return 0;
+    for (i = 0; i < 12u; i++) {
+        r = (bass + i) % 12u;
+        if (!((pc >> r) & 1u))
+            continue;
+        m = (pc >> r | pc << (12u - r)) & 0xFFFu;       /* the classes as intervals above r */
+        for (j = 0; j < sizeof CL_SHAPE / sizeof CL_SHAPE[0]; j++) {
+            uint32_t s = 0, q;
+            for (q = 0; CL_SHAPE[j][q] >= 0; q++)
+                s |= 1u << CL_SHAPE[j][q];
+            if (s == m) {
+                *root = r;
+                *shape = j;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+static uint32_t cl_find(uint32_t pc, uint32_t bass)     /* the same classes if they make a chord, else 0 */
+{
+    uint32_t r, j;
+    return cl_match(pc, bass, &r, &j) ? pc : 0u;
+}
+/* CHORD NAME (POP): the name's ending per shape, and whether POP collapses the shape to a plainer one (6, m6, add9, madd9,
+ * sus7, 9ths and m(maj7) become the triad or 7th they stand on: yellow), or the shape is a shell of a seventh (no fifth:
+ * yellow too). Triads and the standard sevenths keep their name; sus2 / sus4 are kept (a sus is no major or minor) */
+static const struct { const char *suf; uint8_t soft; } CL_POP[23] = {
+    {"", 0},      {"m", 0},     {"dim", 0},  {"aug", 0},  {"sus2", 0},  {"sus4", 0},  {"", 1},       {"m", 1},
+    {"7", 0},     {"maj7", 0},  {"m7", 0},   {"m", 1},    {"m7b5", 0},  {"dim7", 0},  {"", 1},       {"m", 1},
+    {"sus4", 1},  {"7", 1},     {"maj7", 1}, {"m7", 1},   {"7", 1},     {"maj7", 1},  {"m7", 1},
+};
+static const char *const CL_ROOT[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+/* what the header's badge shows (0: none): bit 31 set, bits 29..28 the confidence (0 red, 1 yellow, 2 green), 27..23 the
+ * shape (31: a cluster), 22..19 the root, 18..15 the lowest note's class; written once a frame by ui_leds, read by the header */
+static uint32_t cl_head_pack(uint32_t root, uint32_t shape, uint32_t bass)
+{
+    uint32_t conf;
+    if (shape >= 23u)
+        return 1u << 31 | 0u << 28 | 31u << 23 | bass % 12u << 15;                  /* a cluster: red */
+    conf = CL_POP[shape].soft || shape >= 20u || root != bass % 12u ? 1u : 2u;     /* yellow: collapsed, a shell, an inversion */
+    return 1u << 31 | conf << 28 | shape << 23 | root << 19 | bass % 12u << 15;
+}
+/* the badge's text for a cl_head value */
+static void cl_head_text(uint32_t h, char *out, uint32_t cap)
+{
+    uint32_t shape = h >> 23 & 31u;
+    if (shape == 31u) {
+        str_cpy(out, "CLUSTER", cap);
+        return;
+    }
+    str_cpy(out, CL_ROOT[h >> 19 & 15u], cap);
+    str_cpy(out + str_len(out), CL_POP[shape].suf, cap - str_len(out));
+}
+/* the pitch classes the track t sounds now (bit i, i = note % 12) and the lowest note (128: none) */
+static uint32_t cl_sounding(const track_t *t, uint32_t *bass)
+{
+    uint32_t k, i, note, pc = 0, lo = 128;
+    uint8_t s[4 + NLANE + 4];
+    uint32_t n = t->seq_n < 4u + NLANE ? t->seq_n : 4u + NLANE;
+    for (i = 0; i < n; i++)
+        s[i] = t->seq_notes[i];
+    if (t->arp_note)
+        s[n++] = t->arp_note;
+    for (i = 0; i < 3u; i++)
+        if (t->arp_ch[i])
+            s[n++] = t->arp_ch[i];
+    for (i = 0; i < n; i++)
+        if (s[i] < 128u) {
+            pc |= 1u << (s[i] % 12u);
+            lo = s[i] < lo ? s[i] : lo;
+        }
+    for (k = 0; k < KB_N; k++)
+        if (kb_chn[k] && kb_trk[k] == trk_index(t))
+            for (i = 0; i < kb_chn[k]; i++) {
+                pc |= 1u << (kb_chord[k][i] % 12u);
+                lo = kb_chord[k][i] < lo ? kb_chord[k][i] : lo;
+            }
+    if (midi_owners[trk_index(t)])
+        for (note = 0; note < 128u; note++)
+            if (midi_note_held(t, note)) {
+                pc |= 1u << (note % 12u);
+                lo = note < lo ? note : lo;
+            }
+    *bass = lo;
+    return pc;
+}
+/* the chord lit now, once a frame (pitch classes, 0: none); ms: the clock the 1.5 s run on. cl_info: its root, shape and bass */
+static uint32_t cl_info[3];
+static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t trk, uint32_t ms)
+{
+    static uint32_t held, at, last_trk;
+    uint32_t r, j;
+    if (trk != last_trk) {                              /* another track: its own, from nothing */
+        last_trk = trk;
+        held = 0;
+    }
+    if (pc && cl_match(pc, bass % 12u, &r, &j)) {
+        held = pc;
+        cl_info[0] = r, cl_info[1] = j, cl_info[2] = bass % 12u;
+        at = ms | 1u;
+    } else if (pc && (pc & ~held)) {
+        held = 0;                                       /* a note outside it */
+    } else if (pc) {
+        at = ms | 1u;                                   /* part of it: keep it */
+    } else if (held && ms - at > 1500u) {
+        held = 0;
+    }
+    return held;
+}
+/* the keys whose note is in the chord (pitch classes cl), bit k = key k, as the keys play now (kb_map) */
+static uint32_t cl_keys(const track_t *t, uint32_t cl)
+{
+    const engine_t *e = ENGINES[eng_idx(t->eng_req)];
+    uint32_t k, note, m = 0;
+    for (k = 0; cl && k < 27u; k++) {
+        if (e->keys && e->keys(t, k) >= 0)
+            continue;
+        note = kb_map(t, k);
+        if (note <= 127u && ((cl >> (note % 12u)) & 1u))
+            m |= 1u << k;
+    }
+    return m;
+}
+
 /* the key LEDs, bit k = key k: NAME's keys, the layer's map, the DRUM grid, else the keys held and the notes
  * the selected track's sequencer, ARP and MIDI IN play, on NOTES while stopped the cursor step's notes (#89; and
  * on SLICES the keys of the selected slice) */
@@ -413,6 +565,16 @@ static void ui_leds(void)
     g = !keys_map ? 0u : grid_on() && !ui.layer && !name_on() ? grid_glow() : 0u;   /* (key_leds: the grid's map) */
     beat = g ? grid_beats() & ~c : 0u;                  /* (the grid's empty beat starts: brighter than the glow) */
     sc = keys_map ? 0u : scale_leds(&sr);               /* SCALE LEDS: the scale's keys glow, the root's brighter */
+    cl_head = 0;
+    if (sc && mode != LEDS_INV) {                       /* CHORD LIGHTS: the chord's keys lit, whatever the scale */
+        uint32_t cb, cp = cl_sounding(TSEL, &cb), cl = cl_state(cp, cb, song.sel, fm1_ms), ct = cl_keys(TSEL, cl);
+        c |= ct;
+        sc |= ct;
+        if (cl)                                         /* the header's badge: its name, or a cluster (3+ notes, no chord) */
+            cl_head = cl_head_pack(cl_info[0], cl_info[1], cl_info[2]);
+        else if (cl_pop(cp) >= 3u)
+            cl_head = cl_head_pack(0, 31, cb);
+    }
     for (k = 0; k < 27u; k++) {
         uint32_t in = (sc >> k) & 1u, rt = (sr >> k) & 1u, idle = !((c >> k) & 1u);
         led_put(nm, LED_KEY0 + k, (int)((beat >> k) & 1u));
