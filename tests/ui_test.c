@@ -1592,7 +1592,7 @@ static int test_menu_tabs(void)
     bad += check("MENU tabs: DISPLAY CONTROL AUDIO SYSTEM MIDI ((1.3) MIDI appended), rows in a run, 6 shown fit the page; "
                  "tab gaps constant (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
-                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 7u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS) */
+                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 9u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS; CHORD MODE, CHORD NAMES) */
                  mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC && mtab_rows(MTAB_MIDI) == 16u);   /* ((Skiff) SYSTEM: CPU
                                                          * CLOCK; (Skiff 2.0) USB SERIAL with the console only; (2.2)
                                                          * MIDI: CLOCK OUT, AUTO CHANNEL, NOTES OUT, CC OUT, THRU, REMOTE) */
@@ -5672,20 +5672,20 @@ static int test_chord_lights(void)
         cl_hold(0, 3, CEG);                                  /* C E G: C, green */
         fm1_ms += 100u; ui_leds();
         cl_head_text(cl_head, nm, sizeof nm);
-        ok = cl_head && (cl_head >> 28 & 3u) == 2u && !strcmp(nm, "C");
+        ok = cl_head && (cl_head >> 29 & 3u) == 2u && !strcmp(nm, "C");
         {
             static const uint8_t AM[3] = {57, 60, 64}, AM_INV[3] = {60, 64, 69}, FS7[4] = {54, 60, 63, 69}, DOM9[5] = {48, 52, 55, 58, 62},
                                  CLU[3] = {60, 61, 62}, C7[4] = {48, 52, 55, 58};
             cl_hold(0, 3, AM); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);
-            ok &= (cl_head >> 28 & 3u) == 2u && !strcmp(nm, "Am");
+            ok &= (cl_head >> 29 & 3u) == 2u && !strcmp(nm, "Am");
             cl_hold(0, 3, AM_INV); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);   /* A C E on top of C: 1st inversion */
-            ok &= (cl_head >> 28 & 3u) == 1u && !strcmp(nm, "Am");
+            ok &= (cl_head >> 29 & 3u) == 1u && !strcmp(nm, "Am");
             cl_hold(0, 4, C7); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);
-            ok &= (cl_head >> 28 & 3u) == 2u && !strcmp(nm, "C7");
+            ok &= (cl_head >> 29 & 3u) == 2u && !strcmp(nm, "C7");
             cl_hold(0, 5, DOM9); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);    /* C9: POP says C7, yellow */
-            ok &= (cl_head >> 28 & 3u) == 1u && !strcmp(nm, "C7");
+            ok &= (cl_head >> 29 & 3u) == 1u && !strcmp(nm, "C7");
             cl_hold(0, 3, CLU); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);
-            ok &= (cl_head >> 28 & 3u) == 0u && !strcmp(nm, "CLUSTER") && !lit_keys(fm1_led);
+            ok &= (cl_head >> 29 & 3u) == 0u && !strcmp(nm, "CLUSTER") && !lit_keys(fm1_led);
             (void)FS7;
         }
         bad += check("CHORD NAME: C green, Am green, an inversion yellow, C9 shown C7 yellow, a cluster red and no keys lit", ok);
@@ -5720,6 +5720,120 @@ static int test_chord_lights(void)
     return bad;
 }
 
+
+/* CHORD MODE / CHORD NAMES (MENU > CONTROL, after KEEP SENDS; the byte that held STYLE): POP the first 23 shapes with plain
+ * names, JAZZ every shape with slash chords, FIGURED BASS the figures over the bass; AUTO spells by the key, SHARPS, FLATS */
+static void ch_play(uint32_t n, const uint8_t *notes)
+{
+    uint32_t i;
+    memset(kb_chn, 0, sizeof kb_chn);
+    if (n) {
+        kb_chn[0] = (uint8_t)n;
+        kb_trk[0] = 0;
+        for (i = 0; i < n; i++)
+            kb_chord[0][i] = notes[i];
+    }
+    fm1_ms += 2500u;
+    ui_leds();                                           /* (silence first: a held chord of another mode goes) */
+}
+static int test_chord_modes(void)
+{
+    char nm[16];
+    int bad = 0, ok;
+    static const uint8_t BB7S11_D[5] = {50, 58, 64, 65, 68}, C13[6] = {48, 52, 55, 58, 62, 69}, C9[5] = {48, 52, 55, 58, 62},
+                         CEGBB[4] = {48, 52, 55, 58}, CEG_INV[3] = {52, 55, 60}, CGE[3] = {48, 55, 52}, DB[3] = {49, 53, 56},
+                         ALT[5] = {48, 52, 58, 63, 68};
+    static const int8_t MAP6[1] = {0};
+    (void)MAP6;
+    ui_power_on();
+    {   /* the menu rows: after KEEP SENDS in CONTROL, three values, saved in the byte that held STYLE, default POP / AUTO */
+        ok = MI_CHMODE == MI_KEEPS + 1u && MI_CHNAMES == MI_KEEPS + 2u && MI_TAB[MI_CHMODE] == MTAB_CONTROL &&
+             MI_TAB[MI_CHNAMES] == MTAB_CONTROL && str_eq(MI_NAME[MI_CHMODE], "CHORD MODE") &&
+             str_eq(MI_NAME[MI_CHNAMES], "CHORD NAMES") && menu_n(MI_CHMODE) == 3u && menu_n(MI_CHNAMES) == 3u &&
+             !menu_get(MI_CHMODE) && !menu_get(MI_CHNAMES) && str_eq(menu_vname(MI_CHMODE, 2), "FIG BASS") &&
+             str_eq(menu_vname(MI_CHNAMES, 2), "FLATS");
+        menu_put(MI_CHMODE, 2);
+        menu_put(MI_CHNAMES, 1);
+        ok &= (CH_BYTE & 15u) == (2u | 1u << 2) && menu_get(MI_CHMODE) == 2u && menu_get(MI_CHNAMES) == 1u;
+        CH_BYTE = 0xFF;                                  /* (a value an older firmware left: one of the three) */
+        ok &= ch_mode() < 3u && ch_names() < 3u;
+        menu_put(MI_CHMODE, 0);
+        menu_put(MI_CHNAMES, 0);
+        bad += check("CHORD MODE / NAMES: rows after KEEP SENDS, 3 values each, kept in the STYLE byte, an old value reads as one of them", ok);
+    }
+    menu_put(MI_SCLLED, 1);
+    sel_set(0);
+    TSEL->p[P_SCALE] = 1;
+    TSEL->p[P_ROOT] = 0;
+    menu_put(MI_CHMODE, 1);
+    ch_play(5, BB7S11_D);                                /* JAZZ: Bb7#11 over D: a slash chord, yellow; Bb by the keys' flats */
+    menu_put(MI_CHNAMES, 2);
+    ch_play(5, BB7S11_D);
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok = !strcmp(nm, "Bb7#11/D") && (cl_head >> 29 & 3u) == 1u;
+    menu_put(MI_CHNAMES, 1);
+    ch_play(5, BB7S11_D);
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "A#7#11/D");
+    ch_play(6, C13);
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "C13") && (cl_head >> 29 & 3u) == 2u;
+    ch_play(5, ALT);                                     /* C E Bb Eb Ab: C7alt, green in JAZZ */
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "C7alt") && (cl_head >> 29 & 3u) == 2u;
+    bad += check("CHORD MODE JAZZ: Bb7#11/D, C13, C7alt named whole (slash chord yellow, the rest green); NAMES sharps / flats spell them", ok);
+    menu_put(MI_CHMODE, 0);
+    ch_play(6, C13);
+    ok = (cl_head >> 29 & 3u) == 0u;                     /* POP: six classes are no chord there: a red cluster */
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "CLUSTER");
+    ch_play(5, C9);
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "C7") && (cl_head >> 29 & 3u) == 1u;
+    bad += check("CHORD MODE POP: C13 is a cluster, C9 is C7 (yellow)", ok);
+    menu_put(MI_CHMODE, 2);
+    ch_play(4, CEGBB);                                   /* FIGURED BASS over C: 7; first inversion of C: 6/3; second 6/4 */
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok = !strcmp(nm, "7") && (cl_head >> 29 & 3u) == 2u;
+    ch_play(3, CEG_INV);
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "6/3");
+    ch_play(3, CGE);
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "5/3");
+    ch_play(3, DB);                                      /* a C# E G# triad over C#: 5/3 as well, any key */
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= !strcmp(nm, "5/3");
+    ch_play(5, C9);                                      /* C E G Bb D: 9/7/5/3 as 7/5/3/2: no standard figure: yellow, numerals */
+    cl_head_text(cl_head, nm, sizeof nm);
+    ok &= (cl_head >> 29 & 3u) == 1u && !strcmp(nm, "7/5/3/2");
+    bad += check("CHORD MODE FIGURED BASS: 7, 6/3, 5/3 over the bass, C E G Bb D as 7/5/3/2 (yellow)", ok);
+    menu_put(MI_CHMODE, 0);
+    menu_put(MI_CHNAMES, 0);
+    {   /* AUTO: the key's signature decides: F major, D minor (its relative F) flats; C major, A minor sharps; chromatic by ROOT */
+        TSEL->p[P_ROOT] = 5;
+        TSEL->p[P_SCALE] = 1;
+        ch_play(3, DB);
+        cl_head_text(cl_head, nm, sizeof nm);
+        ok = !strcmp(nm, "Db");
+        TSEL->p[P_ROOT] = 0;
+        ch_play(3, DB);
+        cl_head_text(cl_head, nm, sizeof nm);
+        ok &= !strcmp(nm, "C#");
+        TSEL->p[P_ROOT] = 2;
+        TSEL->p[P_SCALE] = 2;                            /* (a minor scale: D minor, F major's relative) */
+        ch_play(3, DB);
+        cl_head_text(cl_head, nm, sizeof nm);
+        ok &= scale_mask(TSEL) >> 3 & 1u ? !strcmp(nm, "Db") : 1;
+        bad += check("CHORD NAMES AUTO: F major and D minor spell with flats (Db), C major with sharps (C#)", ok);
+    }
+    menu_put(MI_SCLLED, 0);
+    menu_put(MI_CHMODE, 0);
+    menu_put(MI_CHNAMES, 0);
+    ch_play(0, 0);
+    ui_power_on();
+    return bad;
+}
 /* #37: QNT SEQ on the SCL page: the keys as SNAP, the sequence snapped as it plays, saved with the project */
 static int test_seq_quant(void)
 {
@@ -10343,6 +10457,7 @@ int main(void)
     bad += test_step_leds();
     bad += test_scale_leds();
     bad += test_chord_lights();
+    bad += test_chord_modes();
     bad += test_screen_off();
     bad += test_playhead_line();
     bad += test_fm6_charts();
