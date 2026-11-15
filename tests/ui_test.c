@@ -5549,6 +5549,177 @@ static int test_scale_leds(void)
     return bad;
 }
 
+/* CHORD LIGHTS (ui_input.c cl_*): with SCALE LEDS ON, three or more notes that make a chord light its keys fully in every
+ * octave over the scale's glow; the bass decides the root (C6 / Am7); two notes, a cluster or no chord light nothing;
+ * the chord stays while what sounds is part of it and 1.5 s after silence, another note drops it; SCALE LEDS OFF,
+ * INV and a DRUM track leave the keys as before */
+static void cl_hold(uint32_t trk_i, uint32_t n, const uint8_t *notes)   /* one key started these notes, or none (n 0) */
+{
+    uint32_t i;
+    memset(kb_chn, 0, sizeof kb_chn);
+    if (n) {
+        kb_chn[0] = (uint8_t)n;
+        kb_trk[0] = (uint8_t)trk_i;
+        for (i = 0; i < n; i++)
+            kb_chord[0][i] = notes[i];
+    }
+}
+static int test_chord_lights(void)
+{
+    static const uint8_t CEG[3] = {60, 64, 67}, C6[4] = {48, 52, 55, 57}, CE[2] = {60, 64},
+                         CDE[3] = {60, 62, 64}, FSH[1] = {66};
+    const uint32_t CHORD_KEYS = 1u << 2 | 1u << 7 | 1u << 11 | 1u << 14 | 1u << 19 | 1u << 23 | 1u << 26;   /* G3, C4 E4 G4, C5 E5 G5 */
+    int bad = 0, ok;
+    uint32_t white = 0, k, pcm, bass, id, p, r;
+    track_t *t;
+    static const int8_t MAP[6][FM1_NCOL] = {     /* (hal/fm1_input.h FM1_KEYMAP; the host stub is zero) */
+        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+        { 5, 11,  4, 10,  3,  9,  2,  8, -1, -1, -1},
+        {34, 35, 36, 37, 38, 40, 39, 13,  7,  6, 12},
+        {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33},
+        { 0,  1, 15, 14, 17, 16, 19, 18, 20, 21, 22},
+        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    };
+    ui_power_on();
+    for (id = 0; id < 41u; id++) {
+        led_pos[id] = 0xFF;
+        for (p = 0; p < FM1_NCOL; p++)
+            for (r = 1; r < 5u; r++)
+                if (MAP[r][p] == (int8_t)id)
+                    led_pos[id] = (uint8_t)(p << 3 | r);
+    }
+    for (k = 0; k < 27u; k++)
+        white |= (uint32_t)!key_black(k) << k;
+    sel_set(0);
+    t = TSEL;
+    t->p[P_SCALE] = 1;
+    t->p[P_ROOT] = 0;
+    t->p[P_QUANT] = QN_OFF;
+    t->p[P_TRANS] = 0;
+    settings_leds = LEDS_DIM;
+    ok = cl_find(1u << 0 | 1u << 4 | 1u << 7, 0) != 0u && cl_find(1u << 0 | 1u << 3 | 1u << 7, 0) != 0u &&
+         cl_find(1u << 0 | 1u << 4 | 1u << 7 | 1u << 11, 0) != 0u && cl_find(1u << 0 | 1u << 5 | 1u << 7, 0) != 0u &&
+         cl_find(1u << 0 | 1u << 4 | 1u << 7 | 1u << 10 | 1u << 2, 0) != 0u;
+    ok &= !cl_find(1u << 0 | 1u << 4, 0) && !cl_find(1u << 0 | 1u << 2 | 1u << 4, 0) && !cl_find(0xFFFu, 0) &&
+          !cl_find(1u << 0 | 1u << 1 | 1u << 2, 0) && !cl_find(1u << 0, 0);
+    bad += check("CHORD LIGHTS: triads, sus, sevenths, a ninth are chords; two notes, a cluster, a scale run are not", ok);
+    pcm = cl_sounding(t, &bass);
+    ok = !pcm && bass == 128u;
+    cl_hold(0, 3, CEG);
+    pcm = cl_sounding(t, &bass);
+    ok &= pcm == (1u << 0 | 1u << 4 | 1u << 7) && bass == 60u;
+    bad += check("CHORD LIGHTS: the notes a held chord key sounds are read (pitch classes, the lowest note)", ok);
+    cl_hold(0, 0, 0);
+    ui_leds();
+    ok = !lit_keys(fm1_led);
+    menu_put(MI_SCLLED, 1);
+    cl_hold(0, 3, CEG);
+    fm1_ms += 100u;
+    ui_leds();
+    ok &= lit_keys(fm1_led) == CHORD_KEYS && lit_keys(fm1_led_dim) & white && lit_keys(fm1_led_mid) == (1u << 7 | 1u << 19);
+    bad += check("CHORD LIGHTS: C-E-G held (SCALE LEDS ON, C major): every C, E and G key lit over the scale's glow, the root mid", ok);
+    ok = cl_find(1u << 9 | 1u << 0 | 1u << 4 | 1u << 7, 9) != 0u && cl_find(1u << 0 | 1u << 4 | 1u << 7 | 1u << 9, 0) != 0u;
+    cl_hold(0, 4, C6);
+    ok &= cl_sounding(t, &bass) == (1u << 0 | 1u << 4 | 1u << 7 | 1u << 9) && bass == 48u;
+    bad += check("CHORD LIGHTS: C-E-G-A is found from the bass (A: Am7, C: C6), the same four classes lit", ok);
+    cl_hold(0, 3, CEG);
+    fm1_ms += 100u;
+    ui_leds();
+    cl_hold(0, 0, 0);
+    fm1_ms += 1000u;
+    ui_leds();
+    ok = lit_keys(fm1_led) == CHORD_KEYS;
+    cl_hold(0, 1, CEG);                                  /* part of it (C) sounding: still the chord */
+    fm1_ms += 1000u;
+    ui_leds();
+    ok &= lit_keys(fm1_led) == CHORD_KEYS;
+    cl_hold(0, 0, 0);
+    fm1_ms += 1600u;
+    ui_leds();
+    ok &= !lit_keys(fm1_led);
+    bad += check("CHORD LIGHTS: the chord stays while part of it sounds and 1.5 s after the last note, then goes", ok);
+    cl_hold(0, 3, CEG);
+    fm1_ms += 100u;
+    ui_leds();
+    cl_hold(0, 1, FSH);                                   /* F# alone: not part of the chord: dropped, nothing lit */
+    fm1_ms += 100u;
+    ui_leds();
+    ok = !(lit_keys(fm1_led) & ~(1u << 13));
+    cl_hold(0, 2, CE);
+    fm1_ms += 100u;
+    ui_leds();
+    cl_hold(0, 3, CDE);
+    fm1_ms += 100u;
+    ui_leds();
+    ok &= !(lit_keys(fm1_led) & ~(1u << 9 | 1u << 11 | 1u << 7));
+    bad += check("CHORD LIGHTS: a note outside the chord, two notes or a run of steps drop it: no chord keys lit", ok);
+    cl_hold(0, 3, CEG);
+    fm1_ms += 100u;
+    settings_leds = LEDS_INV;
+    ui_leds();
+    ok = lit_keys(fm1_led) != CHORD_KEYS;
+    settings_leds = LEDS_DIM;
+    menu_put(MI_SCLLED, 0);
+    ui_leds();
+    ok &= !lit_keys(fm1_led);
+    bad += check("CHORD LIGHTS: INV and SCALE LEDS OFF leave the keys as before", ok);
+    {   /* the badge (POP names, confidence): root position clean = green, an inversion or a collapsed shape = yellow,
+         * 3+ notes that are no chord = a red cluster, no chord = none, SCALE LEDS OFF = none */
+        char nm[12];
+        uint32_t h, root, shape;
+        menu_put(MI_SCLLED, 1);
+        settings_leds = LEDS_DIM;
+        cl_hold(0, 3, CEG);                                  /* C E G: C, green */
+        fm1_ms += 100u; ui_leds();
+        cl_head_text(cl_head, nm, sizeof nm);
+        ok = cl_head && (cl_head >> 28 & 3u) == 2u && !strcmp(nm, "C");
+        {
+            static const uint8_t AM[3] = {57, 60, 64}, AM_INV[3] = {60, 64, 69}, FS7[4] = {54, 60, 63, 69}, DOM9[5] = {48, 52, 55, 58, 62},
+                                 CLU[3] = {60, 61, 62}, C7[4] = {48, 52, 55, 58};
+            cl_hold(0, 3, AM); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);
+            ok &= (cl_head >> 28 & 3u) == 2u && !strcmp(nm, "Am");
+            cl_hold(0, 3, AM_INV); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);   /* A C E on top of C: 1st inversion */
+            ok &= (cl_head >> 28 & 3u) == 1u && !strcmp(nm, "Am");
+            cl_hold(0, 4, C7); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);
+            ok &= (cl_head >> 28 & 3u) == 2u && !strcmp(nm, "C7");
+            cl_hold(0, 5, DOM9); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);    /* C9: POP says C7, yellow */
+            ok &= (cl_head >> 28 & 3u) == 1u && !strcmp(nm, "C7");
+            cl_hold(0, 3, CLU); fm1_ms += 100u; ui_leds(); cl_head_text(cl_head, nm, sizeof nm);
+            ok &= (cl_head >> 28 & 3u) == 0u && !strcmp(nm, "CLUSTER") && !lit_keys(fm1_led);
+            (void)FS7;
+        }
+        bad += check("CHORD NAME: C green, Am green, an inversion yellow, C9 shown C7 yellow, a cluster red and no keys lit", ok);
+        cl_hold(0, 0, 0); fm1_ms += 2000u; ui_leds();
+        ok = cl_head == 0u;
+        cl_hold(0, 3, CEG); fm1_ms += 100u; ui_leds();
+        ok &= cl_head != 0u;
+        menu_put(MI_SCLLED, 0); ui_leds();
+        ok &= cl_head == 0u;
+        bad += check("CHORD NAME: none in silence after 1.5 s, none with SCALE LEDS OFF", ok);
+        (void)h; (void)root; (void)shape;
+        menu_put(MI_SCLLED, 1);
+        cl_hold(0, 3, CEG); fm1_ms += 100u; ui_leds();
+        {   /* the header: the badge changes what is drawn (its signature includes it) and shows the name */
+            uint32_t a;
+            ui.force = 1; ui_draw(); a = ui.head_sig;
+            cl_hold(0, 0, 0); fm1_ms += 2000u; ui_leds();
+            ui.force = 1; ui_draw();
+            ok = a != ui.head_sig;
+            cl_hold(0, 3, CEG); fm1_ms += 100u; ui_leds();
+            ui.force = 1; ui_draw();
+            ok &= a == ui.head_sig;
+            bad += check("CHORD NAME: the header redraws when the badge comes and goes", ok);
+        }
+        menu_put(MI_SCLLED, 0);
+    }
+    cl_hold(0, 0, 0);
+    ui_rec_prefs = 0;
+    settings_leds = LEDS_DIM;
+    led_pos_init();
+    ui_power_on();
+    return bad;
+}
+
 /* #37: QNT SEQ on the SCL page: the keys as SNAP, the sequence snapped as it plays, saved with the project */
 static int test_seq_quant(void)
 {
@@ -10171,6 +10342,7 @@ int main(void)
     bad += test_breath();
     bad += test_step_leds();
     bad += test_scale_leds();
+    bad += test_chord_lights();
     bad += test_screen_off();
     bad += test_playhead_line();
     bad += test_fm6_charts();

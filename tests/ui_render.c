@@ -651,6 +651,7 @@ static void state(void)                          /* a playing song with steps on
 {
     uint32_t i;
     ui_power_on();
+    cl_head = 0;                                 /* (CHORD LIGHTS' badge: only the screens that show it) */
     if (large_on) ui_prefs |= PREF_LARGE;
     song.playing = 1;
     song.g[G_BPM] = 124;
@@ -787,6 +788,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_ROLL_LOCKS, S_ROLL_LOCK_HELD, S_DRUM_LOCKS, S_DRUM_LOCK_HELD, S_MOTION_LOCKS, S_AUTO_LIST, S_AUTO_LIST_ADD, S_AUTO_LIST_DRUM, S_AUTO_LIST_DEL, S_REC_LAYER, S_REC_LAYER_SET,
        S_COUNTIN, S_COUNTIN2, S_MENU_AUDIO, S_HEAD_PLAY_REC, S_HEAD_REC_OTHER, S_HEAD_BPM_TURN, S_HEAD_BPM_LOCK,
        S_HEAD_BPM_LOCKED, S_HEAD_GLO_TURN, S_HEAD_DOWNBEAT, S_HEAD_BEAT_2, S_HEAD_PROJECT,
+       S_HEAD_CHORD, S_HEAD_CHORD_INV, S_HEAD_CHORD_CLUSTER,
        S_TAKE_BOX, S_TAKE_PARTIAL, S_CONFIRM_INIT, S_UNDO_BOX, S_CHANCE_FLAM,
        S_PLAY_DIR, S_POOL, S_CONFIRM_POOL, S_PERF_LAYER, S_DUCK, S_DUCK_OFF, S_PLAY_GATE, S_PERF_SCENES, S_TILES, S_TILES_BAR2, S_TILES_DRUM,
        S_SONG, S_SONG_PLAYING, S_SONG_COPY, S_SONG_CLEAR, S_CONFIRM_ENTRY, S_CONFIRM_ENTRY_LAST, S_STEP_MARK,
@@ -831,7 +833,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "roll_empty", "roll_acid", "roll_chords", "roll_ties", "roll_len32_p2", "roll_high", "roll_low", "roll_wide", "roll_playing",
     "roll_locks", "roll_lock_held", "drum_locks", "drum_lock_held", "motion_locks", "auto_list", "auto_list_add", "auto_list_drum", "auto_list_delete", "layer_rec", "layer_rec_set",
     "countin", "countin_2bars", "menu_audio", "head_play_rec", "head_rec_other", "head_bpm_turn", "head_bpm_lock",
-    "head_bpm_locked", "head_glo_turn", "head_downbeat", "head_beat_2", "head_project",
+    "head_bpm_locked", "head_glo_turn", "head_downbeat", "head_beat_2", "head_project", "head_chord", "head_chord_inv", "head_chord_cluster",
     "take_box", "take_partial", "confirm_init", "undo_box", "chance_flam", "play_dir", "pool",
     "confirm_pool", "layer_perform", "fx_duck", "fx_duck_off", "play_gate", "layer_perform_scenes",
     "step_tiles", "step_tiles_bar2", "step_tiles_drum",
@@ -1097,6 +1099,11 @@ static void setup(int s)
     case S_HEAD_GLO_TURN: ui_prefs |= PREF_BPM_LOCK; go_home(); ui.layer = LAYER_GLO; ui.bpm_t = 40; break;
     case S_HEAD_DOWNBEAT: clk_step = 1; song.rec = 1u << song.sel; go_home(); break;
     case S_HEAD_BEAT_2: clk_step = 5; song.rec = 1u << song.sel; go_home(); break;
+    /* CHORD LIGHTS' badge in the header: C major in root position (green), Am7's 1st inversion collapsed to POP's name (yellow),
+     * three notes that are no chord (red) */
+    case S_HEAD_CHORD: song.playing = 1; cl_head = cl_head_pack(0, 0, 0); go_home(); break;
+    case S_HEAD_CHORD_INV: song.playing = 1; cl_head = cl_head_pack(9, 10, 0); go_home(); break;
+    case S_HEAD_CHORD_CLUSTER: song.playing = 1; cl_head = cl_head_pack(0, 31, 0); go_home(); break;
     case S_HEAD_PROJECT: song.playing = 0; project_save(1); TSEL->p[P_LEVEL]--; fm1_ms += 300u; go_title("ENV"); ui.msg_t = 0; break;   /* ((U3,
                                                      * A2) project B, changed since it was saved: the dot) */
     case S_DRUM: drum(0); go_page(GR_ROLL); ui.cursor = 4; ui.lane = 1; trk[3].seq_idx = 9; break;
