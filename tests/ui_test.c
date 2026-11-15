@@ -1592,7 +1592,7 @@ static int test_menu_tabs(void)
     bad += check("MENU tabs: DISPLAY CONTROL AUDIO SYSTEM MIDI ((1.3) MIDI appended), rows in a run, 6 shown fit the page; "
                  "tab gaps constant (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
-                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 9u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS; CHORD MODE, CHORD NAMES) */
+                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 10u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS; CHORD MODE, CHORD NAMES) */
                  mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC && mtab_rows(MTAB_MIDI) == 16u);   /* ((Skiff) SYSTEM: CPU
                                                          * CLOCK; (Skiff 2.0) USB SERIAL with the console only; (2.2)
                                                          * MIDI: CLOCK OUT, AUTO CHANNEL, NOTES OUT, CC OUT, THRU, REMOTE) */
@@ -5826,6 +5826,37 @@ static int test_chord_modes(void)
         cl_head_text(cl_head, nm, sizeof nm);
         ok &= scale_mask(TSEL) >> 3 & 1u ? !strcmp(nm, "Db") : 1;
         bad += check("CHORD NAMES AUTO: F major and D minor spell with flats (Db), C major with sharps (C#)", ok);
+    }
+    {   /* CHORD FROM: ALL TRACKS (default) names the chord the other tracks make while the lead plays: a note of the lead's own
+         * outside it does not drop it; THIS TRACK reads only the selected track */
+        static const uint8_t CEG[3] = {48, 52, 55};
+        char n2[16];
+        menu_put(MI_CHMODE, 0);
+        menu_put(MI_CHNAMES, 0);
+        menu_put(MI_CHFROM, 0);
+        ok = menu_n(MI_CHFROM) == 2u && !menu_get(MI_CHFROM) && str_eq(menu_vname(MI_CHFROM, 1), "THIS TRACK");
+        sel_set(0);
+        TSEL->p[P_SCALE] = 1;
+        TSEL->p[P_ROOT] = 0;
+        memset(kb_chn, 0, sizeof kb_chn);
+        kb_chn[3] = 3;                                   /* (the chord is held on track 2's key; track 1 is selected) */
+        kb_trk[3] = 1;
+        for (uint32_t i = 0; i < 3; i++)
+            kb_chord[3][i] = CEG[i];
+        kb_chn[5] = 1;                                   /* (the lead's own note, D: not in the chord) */
+        kb_trk[5] = 0;
+        kb_chord[5][0] = 62;
+        fm1_ms += 2500u;
+        ui_leds();
+        cl_head_text(cl_head, n2, sizeof n2);
+        ok &= !strcmp(n2, "C") && (cl_head >> 29 & 3u) == 2u;
+        menu_put(MI_CHFROM, 1);
+        fm1_ms += 2500u;
+        ui_leds();
+        ok &= !cl_head;                                  /* (THIS TRACK: one note, no chord) */
+        menu_put(MI_CHFROM, 0);
+        bad += check("CHORD FROM: ALL TRACKS names the other tracks' chord under the lead's melody note, THIS TRACK does not", ok);
+        memset(kb_chn, 0, sizeof kb_chn);
     }
     menu_put(MI_SCLLED, 0);
     menu_put(MI_CHMODE, 0);
