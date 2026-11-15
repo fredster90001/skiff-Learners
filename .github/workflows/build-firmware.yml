@@ -14,7 +14,7 @@ permissions:
   id-token: write
 
 env:
-  SKIFF_VERSION: "2.6-chord"
+  SKIFF_VERSION: "2.6-diag"
 
 jobs:
   build:
