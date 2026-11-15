@@ -17,6 +17,8 @@ synths and drums, patterns and songs, live performance, and a screen that shows 
 <p align="center"><b>New in 2.6:</b> the Skiff Editor's Screen tab: the FM-1's screen, large, on a computer or an
 Android tablet, following the unit as you play ·
 <a href="https://github.com/illuminus5/skiff/releases/tag/v2.6">the release notes</a><br>
+<b>Chord lights (this build):</b> with SCALE LEDS on, held notes that make a chord light every key of that chord and show its name after the BPM, green when clean, yellow for a shell, inversion or partial chord, red for a cluster. MENU › CONTROL › CHORD MODE picks POP, JAZZ (extensions, slash chords) or FIG BASS (5/3, 6/3, 6/4, 7, 6/5, 4/3, 4/2 over the lowest note); CHORD NAMES picks AUTO (flats or sharps by the selected key), SHARPS or FLATS.
+
 <b>New in 2.5.1:</b> FX › DRIVE's CRUSH no longer cracks on chords and loud notes, as LOFI PIANO
 did ·
 <a href="https://github.com/illuminus5/skiff/releases/tag/v2.5.1">the release notes</a><br>
