@@ -526,6 +526,23 @@ static uint32_t cl_sounding(const track_t *t, uint32_t *bass)
     *bass = lo;
     return pc;
 }
+/* CHORD FROM = ALL TRACKS: the harmony of the other pitched tracks (a drum or one-shot track has none), so a lead sees
+ * the chord the accompaniment makes; the selected track's own notes only when nothing else sounds (it is the chord track) */
+static uint32_t cl_harmony(const track_t *sel, uint32_t *bass)
+{
+    uint32_t i, pc = 0, lo = 128, b, p;
+    for (i = 0; i < NTRK; i++) {
+        if (&trk[i] == sel || ENGINES[eng_idx(trk[i].eng_req)]->oneshot)
+            continue;
+        p = cl_sounding(&trk[i], &b);
+        pc |= p;
+        lo = b < lo ? b : lo;
+    }
+    if (!pc)
+        return cl_sounding(sel, bass);
+    *bass = lo;
+    return pc;
+}
 /* the chord lit now, once a frame (pitch classes, 0: none); ms: the clock the 1.5 s run on. cl_info: its root, shape and bass */
 static uint32_t cl_info[3];
 static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t trk, uint32_t ms)
@@ -651,7 +668,7 @@ static void ui_leds(void)
     sc = keys_map ? 0u : scale_leds(&sr);               /* SCALE LEDS: the scale's keys glow, the root's brighter */
     cl_head = 0;
     if (sc && mode != LEDS_INV) {                       /* CHORD LIGHTS: the chord's keys lit, whatever the scale */
-        uint32_t cb, cm = ch_mode(), cp = cl_sounding(TSEL, &cb), cl = cl_state(cp, cb, cm, song.sel, fm1_ms), ct = cl_keys(TSEL, cl);
+        uint32_t cb, cm = ch_mode(), cp = ch_from() ? cl_sounding(TSEL, &cb) : cl_harmony(TSEL, &cb), cl = cl_state(cp, cb, cm, song.sel, fm1_ms), ct = cl_keys(TSEL, cl);
         c |= ct;
         sc |= ct;
         if (cl)                                         /* the header's badge: its name, or a cluster (3+ notes, no chord) */

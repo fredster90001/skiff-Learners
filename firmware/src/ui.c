@@ -108,6 +108,7 @@ static uint32_t cl_head;                     /* CHORD LIGHTS' badge for the head
 #define CH_BYTE (favorites.factory[15][29])
 static uint32_t ch_mode(void) { return (CH_BYTE & 3u) % 3u; }
 static uint32_t ch_names(void) { return (CH_BYTE >> 2 & 3u) % 3u; }
+static uint32_t ch_from(void) { return CH_BYTE >> 4 & 1u; }   /* 0: ALL TRACKS (the default), 1: THIS TRACK */
 #define PREF_LATCH 1u                          /* (MENU > FX LATCH ON, #40: (Skiff U2) retired, a locked FX layer latches;
                                                 * the bit is left as saved) */
 #define PREF_ANIM_OFF 2u                       /* MENU > ANIM OFF (#46): values snap (no rolling digits, no glide) */
