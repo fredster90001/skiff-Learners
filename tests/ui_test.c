@@ -5796,6 +5796,26 @@ static int test_chord_leds(void)
     ui_leds();
     ok &= breath_keys() == (1u << 7 | 1u << 19 | 1u << 11 | 1u << 23) && !(lit_keys(fm1_led) & breath_keys());   /* B to C, F to E */
     bad += check("CHORD LEDS 3: G7 in C major breathes C and E (B to C, F to E); a plain triad nothing", ok);
+    menu_put(MI_CHLEDS, 2);                              /* a note outside the chord (a D over C-E-G on another track) */
+    memset(kb_chn, 0, sizeof kb_chn);
+    kb_chn[3] = 3;
+    kb_trk[3] = 1;
+    for (k = 0; k < 3u; k++)
+        kb_chord[3][k] = CEG[k];
+    kb_chn[5] = 1;
+    kb_trk[5] = 0;
+    kb_chord[5][0] = 62;
+    sel_set(0);
+    fm1_ms += 2500u;
+    ui_leds();
+    ok = breath_keys() == (1u << 7 | 1u << 19 | 1u << 11 | 1u << 23);   /* C and E, a step either side of D */
+    menu_put(MI_CHFROM, 1);                              /* THIS TRACK: the D is the only note, no chord: nothing */
+    fm1_ms += 2500u;
+    ui_leds();
+    ok &= !breath_keys();
+    menu_put(MI_CHFROM, 0);
+    memset(kb_chn, 0, sizeof kb_chn);
+    bad += check("CHORD LEDS 3: a note the lead plays outside the chord makes the chord notes a step from it breathe", ok);
     menu_put(MI_CHLEDS, 1);
     menu_put(MI_SCLLED, 0);
     cl_hold(0, 0, 0);
