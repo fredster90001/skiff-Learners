@@ -1592,7 +1592,7 @@ static int test_menu_tabs(void)
     bad += check("MENU tabs: DISPLAY CONTROL AUDIO SYSTEM MIDI ((1.3) MIDI appended), rows in a run, 6 shown fit the page; "
                  "tab gaps constant (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
-                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 10u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS; CHORD MODE, CHORD NAMES) */
+                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 11u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS; CHORD MODE, CHORD NAMES) */
                  mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC && mtab_rows(MTAB_MIDI) == 16u);   /* ((Skiff) SYSTEM: CPU
                                                          * CLOCK; (Skiff 2.0) USB SERIAL with the console only; (2.2)
                                                          * MIDI: CLOCK OUT, AUTO CHANNEL, NOTES OUT, CC OUT, THRU, REMOTE) */
@@ -5720,6 +5720,88 @@ static int test_chord_lights(void)
     return bad;
 }
 
+
+
+/* CHORD LEDS (MENU > CONTROL, bits 5..6 of the CHORD byte): 1 the chord alone (scale dark, keys mid, the root's double pulse),
+ * 2 the scale's glow under it (as before, the default), 3 as 2 and the resolution of a dissonance breathes */
+static int test_chord_leds(void)
+{
+    static const uint8_t CEG[3] = {60, 64, 67}, G7[4] = {55, 59, 62, 65};
+    const uint32_t CK = 1u << 2 | 1u << 7 | 1u << 11 | 1u << 14 | 1u << 19 | 1u << 23 | 1u << 26, ROOT = 1u << 7 | 1u << 19;
+    int bad = 0, ok;
+    uint32_t white = 0, k, id, p, r;
+    static const int8_t MAP[6][FM1_NCOL] = {
+        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, { 5, 11,  4, 10,  3,  9,  2,  8, -1, -1, -1},
+        {34, 35, 36, 37, 38, 40, 39, 13,  7,  6, 12}, {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33},
+        { 0,  1, 15, 14, 17, 16, 19, 18, 20, 21, 22}, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    };
+    ui_power_on();
+    for (id = 0; id < 41u; id++) {
+        led_pos[id] = 0xFF;
+        for (p = 0; p < FM1_NCOL; p++)
+            for (r = 1; r < 5u; r++)
+                if (MAP[r][p] == (int8_t)id)
+                    led_pos[id] = (uint8_t)(p << 3 | r);
+    }
+    for (k = 0; k < 27u; k++)
+        white |= (uint32_t)!key_black(k) << k;
+    sel_set(0);
+    TSEL->p[P_SCALE] = 1;
+    TSEL->p[P_ROOT] = 0;
+    TSEL->p[P_QUANT] = QN_OFF;
+    TSEL->p[P_TRANS] = 0;
+    settings_leds = LEDS_DIM;
+    menu_put(MI_SCLLED, 1);
+    ok = menu_n(MI_CHLEDS) == 3u && menu_get(MI_CHLEDS) == 1u && ch_level() == 2u && str_eq(menu_vname(MI_CHLEDS, 0), "1 CHORD ONLY");
+    menu_put(MI_CHLEDS, 2);
+    ok &= ch_level() == 3u && menu_get(MI_CHLEDS) == 2u && (CH_BYTE >> 5 & 3u) == 1u;
+    menu_put(MI_CHLEDS, 0);
+    ok &= ch_level() == 1u && menu_get(MI_CHLEDS) == 0u;
+    CH_BYTE = 0;                                         /* (a byte from the build before: level 2) */
+    ok &= ch_level() == 2u;
+    bad += check("CHORD LEDS: row after CHORD FROM, three values, a zero byte is level 2", ok);
+    menu_put(MI_CHLEDS, 0);
+    cl_hold(0, 3, CEG);
+    fm1_ms = (fm1_ms / 1200u + 1u) * 1200u;              /* a pulse's first flash */
+    ui_leds();
+    ok = lit_keys(fm1_led) == ROOT && lit_keys(fm1_led_mid) == CK && lit_keys(fm1_led_dim) == CK && !breath_keys();
+    fm1_ms += 180u;                                      /* between the two flashes */
+    ui_leds();
+    ok &= !(lit_keys(fm1_led) & ~lit_keys(fm1_led_mid) & ~0u) && lit_keys(fm1_led) == 0u;
+    fm1_ms += 100u;                                      /* the second flash */
+    ui_leds();
+    ok &= lit_keys(fm1_led) == ROOT;
+    fm1_ms += 500u;                                      /* the rest */
+    ui_leds();
+    ok &= lit_keys(fm1_led) == 0u && lit_keys(fm1_led_mid) == CK && !(lit_keys(fm1_led_dim) & ~CK);
+    bad += check("CHORD LEDS 1: only the chord's keys lit (mid, no scale glow), the root's two flashes then a rest", ok);
+    cl_hold(0, 0, 0);
+    fm1_ms += 3000u;
+    ui_leds();
+    ok = (lit_keys(fm1_led_dim) & white) != 0u;          /* (no chord: the scale guides as before) */
+    bad += check("CHORD LEDS 1: with no chord the scale glow stays", ok);
+    menu_put(MI_CHLEDS, 1);
+    cl_hold(0, 4, G7);
+    fm1_ms += 100u;
+    ui_leds();
+    ok = !breath_keys();
+    bad += check("CHORD LEDS 2: a dominant seventh breathes nothing", ok);
+    menu_put(MI_CHLEDS, 2);
+    cl_hold(0, 3, CEG);
+    fm1_ms += 100u;
+    ui_leds();
+    ok = !breath_keys();                                 /* (a plain triad: no dissonance) */
+    cl_hold(0, 4, G7);
+    fm1_ms += 100u;
+    ui_leds();
+    ok &= breath_keys() == (1u << 7 | 1u << 19 | 1u << 11 | 1u << 23) && !(lit_keys(fm1_led) & breath_keys());   /* B to C, F to E */
+    bad += check("CHORD LEDS 3: G7 in C major breathes C and E (B to C, F to E); a plain triad nothing", ok);
+    menu_put(MI_CHLEDS, 1);
+    menu_put(MI_SCLLED, 0);
+    cl_hold(0, 0, 0);
+    ui_power_on();
+    return bad;
+}
 
 /* CHORD MODE / CHORD NAMES (MENU > CONTROL, after KEEP SENDS; the byte that held STYLE): POP the first 23 shapes with plain
  * names, JAZZ every shape with slash chords, FIGURED BASS the figures over the bass; AUTO spells by the key, SHARPS, FLATS */
@@ -10489,6 +10571,7 @@ int main(void)
     bad += test_scale_leds();
     bad += test_chord_lights();
     bad += test_chord_modes();
+    bad += test_chord_leds();
     bad += test_screen_off();
     bad += test_playhead_line();
     bad += test_fm6_charts();
