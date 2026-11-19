@@ -549,7 +549,7 @@ static uint32_t cl_harmony(const track_t *sel, uint32_t *bass)
 }
 /* the chord lit now, once a frame (pitch classes, 0: none); ms: the clock the 1.5 s run on. cl_info: its root, shape and bass */
 static uint32_t cl_info[3];
-static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t trk, uint32_t ms)
+static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t trk, uint32_t ms, uint32_t keep)
 {
     static uint32_t held, at, last_trk, last_cm;
     uint32_t r, j;
@@ -563,7 +563,7 @@ static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t trk, 
         cl_info[0] = r, cl_info[1] = j, cl_info[2] = bass % 12u;
         at = ms | 1u;
     } else if (pc && (pc & ~held)) {
-        held = 0;                                       /* a note outside it */
+        held = keep && ms - at <= 1500u ? held : 0;     /* a note outside it (LEVEL 3 keeps the chord 1.5 s: that note resolves into it) */
     } else if (pc) {
         at = ms | 1u;                                   /* part of it: keep it */
     } else if (held && ms - at > 1500u) {
@@ -585,6 +585,18 @@ static uint32_t cl_resolve(const track_t *t, uint32_t cl)
         if ((tens >> a) & 1u)
             tg |= 1u << ((a + 1u) % 12u) | 1u << ((a + 11u) % 12u);
     return tg & abs & ~cl;
+}
+/* CHORD LEDS 3: a note played that is not in the chord (nc, pitch classes) is a dissonance: the chord's notes a half or
+ * whole step from it breathe, where it resolves */
+static uint32_t cl_near(uint32_t nc, uint32_t cl)
+{
+    uint32_t a, d, m = 0;
+    for (a = 0; a < 12u; a++)
+        if ((nc >> a) & 1u)
+            for (d = 1; d < 12u; d++)
+                if ((0xC06u >> d) & 1u)                 /* 1, 2, 10, 11 semitones: a step either way */
+                    m |= cl & (1u << ((a + d) % 12u));
+    return m;
 }
 /* CHORD LEDS 1: the root's double pulse (two short flashes, then a rest, every 1.2 s) */
 static uint32_t cl_pulse(uint32_t ms)
@@ -693,7 +705,7 @@ static void ui_leds(void)
     sc = keys_map ? 0u : scale_leds(&sr);               /* SCALE LEDS: the scale's keys glow, the root's brighter */
     cl_head = 0;
     if (sc && mode != LEDS_INV) {                       /* CHORD LIGHTS: the chord's keys lit, whatever the scale */
-        uint32_t cb, cm = ch_mode(), cp = ch_from() ? cl_sounding(TSEL, &cb) : cl_harmony(TSEL, &cb), cl = cl_state(cp, cb, cm, song.sel, fm1_ms), ct = cl_keys(TSEL, cl);
+        uint32_t cb, ob, cm = ch_mode(), cp = ch_from() ? cl_sounding(TSEL, &cb) : cl_harmony(TSEL, &cb), cl = cl_state(cp, cb, cm, song.sel, fm1_ms, ch_level() == 3u), ct = cl_keys(TSEL, cl);
         uint32_t lv = ch_level();
         if (cl && lv == 1u) {                           /* LEVEL 1: the chord alone: the scale dark, its keys solid mid, the root's pulse */
             uint32_t rk = cl_keys(TSEL, 1u << (cl_info[0] % 12u));
@@ -704,7 +716,7 @@ static void ui_leds(void)
             c |= ct;
             sc |= ct;
             if (cl && lv == 3u)                         /* LEVEL 3: and the resolution of a dissonance breathes */
-                br |= cl_keys(TSEL, cl_resolve(TSEL, cl));
+                br |= cl_keys(TSEL, cl_resolve(TSEL, cl) | cl_near(cl_sounding(TSEL, &ob) & ~cl, cl));
         }
         if (cl)                                         /* the header's badge: its name, or a cluster (3+ notes, no chord) */
             cl_head = cl_head_pack(cl_info[0], cl_info[1], cl_info[2], cm, cl_flats(TSEL), cl);
