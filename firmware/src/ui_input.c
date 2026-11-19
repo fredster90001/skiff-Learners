@@ -339,16 +339,12 @@ static uint32_t scale_leds(uint32_t *root)
 /* the shapes: POP uses the first CL_POP_N, JAZZ all of them (a shape's intervals above its root, -1 ends it; the first
  * match from the bass up wins, so the simpler and the root-position reading first) */
 #define CL_POP_N 23u
-static const int8_t CL_SHAPE[][7] = {
-    {0, 4, 7, -1},          {0, 3, 7, -1},         {0, 3, 6, -1},          {0, 4, 8, -1},         {0, 2, 7, -1},
-    {0, 5, 7, -1},          {0, 4, 7, 9, -1},      {0, 3, 7, 9, -1},       {0, 4, 7, 10, -1},     {0, 4, 7, 11, -1},
-    {0, 3, 7, 10, -1},      {0, 3, 7, 11, -1},     {0, 3, 6, 10, -1},      {0, 3, 6, 9, -1},      {0, 2, 4, 7, -1},
-    {0, 2, 3, 7, -1},       {0, 5, 7, 10, -1},     {0, 2, 4, 7, 10, -1},   {0, 2, 4, 7, 11, -1},  {0, 2, 3, 7, 10, -1},
-    {0, 4, 10, -1},         {0, 4, 11, -1},        {0, 3, 10, -1},
-    /* JAZZ's own: 6/9, the altered sevenths, the elevenths and thirteenths */
-    {0, 2, 4, 7, 9, -1},    {0, 1, 4, 7, 10, -1},  {0, 3, 4, 7, 10, -1},   {0, 4, 6, 7, 10, -1},  {0, 4, 6, 10, -1},
-    {0, 4, 8, 10, -1},      {0, 4, 6, 7, 11, -1},  {0, 2, 3, 5, 7, 10, -1}, {0, 2, 4, 7, 9, 10, -1}, {0, 2, 4, 7, 9, 11, -1},
-    {0, 2, 5, 7, 10, -1},   {0, 1, 4, 8, 10, -1},  {0, 3, 4, 8, 10, -1},   {0, 2, 4, 6, 7, 11, -1}, {0, 2, 4, 5, 7, 10, -1},
+static const uint16_t CL_SHAPE[] = {                 /* (bit i: the shape has the interval i; 0x091 is 0 4 7, a major triad) */
+    0x091, 0x089, 0x049, 0x111, 0x085, 0x0A1, 0x291, 0x289,
+    0x491, 0x891, 0x489, 0x889, 0x449, 0x249, 0x095, 0x08D,
+    0x4A1, 0x495, 0x895, 0x48D, 0x411, 0x811, 0x409, 0x295,
+    0x493, 0x499, 0x4D1, 0x451, 0x511, 0x8D1, 0x4AD, 0x695,
+    0xA95, 0x4A5, 0x513, 0x519, 0x8D5, 0x4B5,
 };
 #define CL_N (sizeof CL_SHAPE / sizeof CL_SHAPE[0])
 static uint32_t cl_pop(uint32_t m)
@@ -381,10 +377,7 @@ static uint32_t cl_match(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t *root
             continue;
         m = (pc >> r | pc << (12u - r)) & 0xFFFu;       /* the classes as intervals above r */
         for (j = 0; j < nsh; j++) {
-            uint32_t s = 0, q;
-            for (q = 0; CL_SHAPE[j][q] >= 0; q++)
-                s |= 1u << CL_SHAPE[j][q];
-            if (s == m) {
+            if (CL_SHAPE[j] == m) {
                 *root = r;
                 *shape = j;
                 return 1;
@@ -401,18 +394,29 @@ static uint32_t cl_find(uint32_t pc, uint32_t bass)     /* (POP) the same classe
 /* the name's ending per shape. POP collapses some to a plainer one (6, m6, add9, madd9, sus7, 9ths and m(maj7) become
  * the triad or 7th they stand on: yellow) and a shell of a seventh (no fifth) is yellow too; triads and the standard
  * sevenths keep their name; sus2 / sus4 are kept (a sus is no major or minor). JAZZ names every shape as it is */
-static const struct { const char *suf; uint8_t soft; } CL_POP[CL_POP_N] = {
-    {"", 0},      {"m", 0},     {"dim", 0},  {"aug", 0},  {"sus2", 0},  {"sus4", 0},  {"", 1},       {"m", 1},
-    {"7", 0},     {"maj7", 0},  {"m7", 0},   {"m", 1},    {"m7b5", 0},  {"dim7", 0},  {"", 1},       {"m", 1},
-    {"sus4", 1},  {"7", 1},     {"maj7", 1}, {"m7", 1},   {"7", 1},     {"maj7", 1},  {"m7", 1},
+static const uint8_t CL_POP[CL_POP_N] = {              /* the CL_JAZZ name POP gives each shape; one that is not its own: collapsed (yellow) */
+    0, 1, 2, 3, 4, 5, 0, 1, 8, 9, 10, 1, 12, 13, 0, 1, 5, 8, 9, 10, 8, 9, 10,
 };
-static const char *const CL_JAZZ[CL_N] = {
-    "", "m", "dim", "aug", "sus2", "sus4", "6", "m6", "7", "maj7", "m7", "m(maj7)", "m7b5", "dim7", "add9", "m(add9)",
-    "7sus4", "9", "maj9", "m9", "7", "maj7", "m7", "6/9", "7b9", "7#9", "7#11", "7b5", "7#5", "maj7#11", "m11", "13",
-    "maj13", "9sus4", "7alt", "7alt", "maj9#11", "11",
-};
-static const char *const CL_SHARP[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-static const char *const CL_FLAT[12] = {"C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"};
+/* the names' endings run together, each ended by its NUL, in CL_SHAPE's order (no table of pointers) */
+static const char CL_JAZZ_S[] =
+    "\000m\000dim\000aug\000sus2\000sus4\0006\000m6\0007\000maj7\000m7\000m(maj7)\000m7b5\000dim7\000add9\000m(add9)\0007sus4\0009\000maj9\000m9\0007\000maj7\000m7\0006/9\0007b9\0007#9\0007#11\0007b5\0007#5\000maj7#11\000m11\00013\000maj13\0009sus4\0007alt\0007alt\000maj9#11\00011";
+static const char *cl_jazz(uint32_t i)
+{
+    const char *p = CL_JAZZ_S;
+    while (i--)
+        p += str_len(p) + 1u;
+    return p;
+}
+/* a note's name into out (sharps or flats): the letter, then # or b where the class is a black key; returns the end */
+static char *cl_note(char *o, uint32_t pc, uint32_t flats)
+{
+    static const char SL[] = "CCDDEFFGGAAB", FL[] = "CDDEEFGGAABB";
+    *o++ = (flats ? FL : SL)[pc % 12u];
+    if ((0x54Au >> (pc % 12u)) & 1u)
+        *o++ = flats ? 'b' : '#';
+    *o = 0;
+    return o;
+}
 /* CHORD NAMES (MENU > CONTROL): AUTO, SHARPS, FLATS; AUTO by the selected track's key (ROOT, SCALE): the key signature of
  * its major (a scale with a minor third: its relative major, 3 up) has flats: F, Bb, Eb, Ab, Db; the others sharps */
 static uint32_t cl_flats(const track_t *t)
@@ -468,7 +472,7 @@ static uint32_t cl_head_pack(uint32_t root, uint32_t shape, uint32_t bass, uint3
     else if (shape == CL_FIG)
         conf = cl_fig(rel, 0, 0) ? 2u : 1u;                                            /* the usual figures green */
     else if (cm == CM_POP)
-        conf = CL_POP[shape].soft || shape >= 20u || root != bass % 12u ? 1u : 2u;     /* yellow: collapsed, a shell, an inversion */
+        conf = CL_POP[shape] != shape || shape >= 20u || root != bass % 12u ? 1u : 2u;     /* yellow: collapsed, a shell, an inversion */
     else
         conf = (shape >= 20u && shape <= 22u) || root != bass % 12u ? 1u : 2u;         /* JAZZ: a shell, a slash chord */
     return 1u << 31 | conf << 29 | shape << 23 | root << 19 | bass % 12u << 15 | cm << 13 | flats << 12 | rel;
@@ -477,7 +481,7 @@ static uint32_t cl_head_pack(uint32_t root, uint32_t shape, uint32_t bass, uint3
 static void cl_head_text(uint32_t h, char *out, uint32_t cap)
 {
     uint32_t shape = h >> 23 & 63u, root = h >> 19 & 15u, bass = h >> 15 & 15u;
-    const char *const *nm = h >> 12 & 1u ? CL_FLAT : CL_SHARP;
+    uint32_t fl = h >> 12 & 1u;
     if (shape == CL_CLUSTER) {
         str_cpy(out, "CLUSTER", cap);
         return;
@@ -486,11 +490,11 @@ static void cl_head_text(uint32_t h, char *out, uint32_t cap)
         (void)cl_fig(h & 0xFFFu, out, cap);
         return;
     }
-    str_cpy(out, nm[root % 12u], cap);
-    str_cpy(out + str_len(out), (h >> 13 & 3u) == CM_JAZZ ? CL_JAZZ[shape] : CL_POP[shape].suf, cap - str_len(out));
+    (void)cl_note(out, root, fl);
+    str_cpy(out + str_len(out), (h >> 13 & 3u) == CM_JAZZ ? cl_jazz(shape) : cl_jazz(CL_POP[shape]), cap - str_len(out));
     if ((h >> 13 & 3u) == CM_JAZZ && root != bass) {    /* JAZZ: a slash chord, the bass after the root's chord */
         str_cpy(out + str_len(out), "/", cap - str_len(out));
-        str_cpy(out + str_len(out), nm[bass % 12u], cap - str_len(out));
+        (void)cl_note(out + str_len(out), bass, fl);
     }
 }
 /* the pitch classes the track t sounds now (bit i, i = note % 12) and the lowest note (128: none) */
