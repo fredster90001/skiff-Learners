@@ -567,6 +567,27 @@ static uint32_t cl_state(uint32_t pc, uint32_t bass, uint32_t cm, uint32_t trk, 
     }
     return held;
 }
+/* CHORD LEDS 3: after a dissonance (a tritone or a minor second in the chord) the keys a semitone from its tension notes
+ * that are in the track's scale and not in the chord: where the tension resolves (G7 in C: B to C, F to E). Pitch classes in, pitch classes out */
+static uint32_t cl_resolve(const track_t *t, uint32_t cl)
+{
+    uint32_t a, tens = 0, sm = scale_mask(t), abs = 0, tg = 0, r = (uint32_t)t->p[P_ROOT] % 12u;
+    for (a = 0; a < 12u; a++) {
+        abs |= ((sm >> a) & 1u) << ((a + r) % 12u);
+        if (((cl >> a) & 1u) && (((cl >> ((a + 6u) % 12u)) & 1u) || ((cl >> ((a + 1u) % 12u)) & 1u)))
+            tens |= 1u << a | (((cl >> ((a + 6u) % 12u)) & 1u) ? 0u : 1u << ((a + 1u) % 12u));
+    }
+    for (a = 0; a < 12u; a++)
+        if ((tens >> a) & 1u)
+            tg |= 1u << ((a + 1u) % 12u) | 1u << ((a + 11u) % 12u);
+    return tg & abs & ~cl;
+}
+/* CHORD LEDS 1: the root's double pulse (two short flashes, then a rest, every 1.2 s) */
+static uint32_t cl_pulse(uint32_t ms)
+{
+    uint32_t ph = ms % 1200u;
+    return ph < 120u || (ph >= 240u && ph < 360u);
+}
 /* the keys whose note is in the chord (pitch classes cl), bit k = key k, as the keys play now (kb_map) */
 static uint32_t cl_keys(const track_t *t, uint32_t cl)
 {
@@ -669,8 +690,18 @@ static void ui_leds(void)
     cl_head = 0;
     if (sc && mode != LEDS_INV) {                       /* CHORD LIGHTS: the chord's keys lit, whatever the scale */
         uint32_t cb, cm = ch_mode(), cp = ch_from() ? cl_sounding(TSEL, &cb) : cl_harmony(TSEL, &cb), cl = cl_state(cp, cb, cm, song.sel, fm1_ms), ct = cl_keys(TSEL, cl);
-        c |= ct;
-        sc |= ct;
+        uint32_t lv = ch_level();
+        if (cl && lv == 1u) {                           /* LEVEL 1: the chord alone: the scale dark, its keys solid mid, the root's pulse */
+            uint32_t rk = cl_keys(TSEL, 1u << (cl_info[0] % 12u));
+            sc = ct;
+            sr = ct;
+            c |= rk & (cl_pulse(fm1_ms) ? ~0u : 0u);
+        } else {
+            c |= ct;
+            sc |= ct;
+            if (cl && lv == 3u)                         /* LEVEL 3: and the resolution of a dissonance breathes */
+                br |= cl_keys(TSEL, cl_resolve(TSEL, cl));
+        }
         if (cl)                                         /* the header's badge: its name, or a cluster (3+ notes, no chord) */
             cl_head = cl_head_pack(cl_info[0], cl_info[1], cl_info[2], cm, cl_flats(TSEL), cl);
         else if (cl_pop(cp) >= 3u)

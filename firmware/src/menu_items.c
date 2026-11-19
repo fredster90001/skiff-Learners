@@ -23,13 +23,13 @@
 /* (SMK-37 Pro, SMK37_UX.md) KEY VELOCITY in CONTROL (question 8); no LEDS row (button LEDs A: on or off only): MI_LEDS
  * past MI_COUNT, so its setting stays and no tab shows it */
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED, MI_PREVIEW,
-       MI_RETURN, MI_KEEPS, MI_CHMODE, MI_CHNAMES, MI_CHFROM, MI_KVEL, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
+       MI_RETURN, MI_KEEPS, MI_CHMODE, MI_CHNAMES, MI_CHFROM, MI_CHLEDS, MI_KVEL, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
        MI_AUTOCH, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_NOTES, MI_CCOUT, MI_THRU, MI_REMOTE, MI_LEARN,
        MI_LCLEAR, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK, MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT, MI_LEDS MI_SERIAL_OUT };
 static const char *const KVEL_N[SMK_KV_N] = {"DYNAMIC", "SOFT", "HARD", "FIXED 64", "FIXED 100", "FIXED 127"};
 #else
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED,
-       MI_PREVIEW, MI_RETURN, MI_KEEPS, MI_CHMODE, MI_CHNAMES, MI_CHFROM, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
+       MI_PREVIEW, MI_RETURN, MI_KEEPS, MI_CHMODE, MI_CHNAMES, MI_CHFROM, MI_CHLEDS, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
        MI_AUTOCH, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_NOTES, MI_CCOUT, MI_THRU, MI_REMOTE, MI_LEARN,
        MI_LCLEAR, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK, MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT MI_SERIAL_OUT };
 #endif   /* ((Skiff U4, A3) HINTS; RESET SETTINGS, a row with no value: its dialog) */   /* ((Skiff U3, R8, R2) CLOCK, MIDI IN, TUNE: the unit's, GLOBAL's and SYSTEM's before; CPU: read) */   /* (1.1: the metronome's rows in
@@ -41,7 +41,7 @@ static const char *const MI_NAME[MI_COUNT] = {"THEME", "PLAYHEAD", "LARGE", "ANI
                                               "LEDS",
 #endif
                                               "SCREEN OFF", "HINTS", "HOLD", "KNOB ACCEL", "BPM LOCK",
-                                              "SCALE LEDS", "STEP PREVIEW", "RETURN", "KEEP SENDS", "CHORD MODE", "CHORD NAMES", "CHORD FROM",
+                                              "SCALE LEDS", "STEP PREVIEW", "RETURN", "KEEP SENDS", "CHORD MODE", "CHORD NAMES", "CHORD FROM", "CHORD LEDS",
 #if BOARD_SMK37
                                               "KEY VELOCITY",
 #endif
@@ -73,7 +73,7 @@ static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_CONTROL,                                                           /* (Skiff 1.3) STEP PREVIEW */
     MTAB_CONTROL,                                                           /* (2.0, D 2A) RETURN */
     MTAB_CONTROL,                                                           /* (2.5) KEEP SENDS */
-    MTAB_CONTROL, MTAB_CONTROL, MTAB_CONTROL,                               /* CHORD MODE, CHORD NAMES, CHORD FROM (ui_input.c cl_*) */
+    MTAB_CONTROL, MTAB_CONTROL, MTAB_CONTROL, MTAB_CONTROL,                /* CHORD MODE, CHORD NAMES, CHORD FROM, CHORD LEDS (ui_input.c cl_*) */
 #if BOARD_SMK37
     MTAB_CONTROL,                                                           /* (SMK-37) KEY VELOCITY */
 #endif
@@ -179,7 +179,7 @@ static uint32_t menu_n(uint32_t row)
            row == MI_HOLD ? 4u : row == MI_LEDS ? LEDS_COUNT : row == MI_SCROFF ? NELEM(SCROFF_N) :
            row == MI_CLOCK ? NELEM(N_CLOCK) : row == MI_TUNE ? 101u : row == MI_CPU ? 1u + FELUCCA_CPU2 :
            MI_TCH(row) ? 33u : row == MI_LEARN || row == MI_LCLEAR ? 1u :
-           row == MI_AUTOCH || row == MI_REMOTE ? 17u : row == MI_NOTES || row == MI_CHMODE || row == MI_CHNAMES ? 3u : row == MI_CHFROM ? 2u :
+           row == MI_AUTOCH || row == MI_REMOTE ? 17u : row == MI_NOTES || row == MI_CHMODE || row == MI_CHNAMES || row == MI_CHLEDS ? 3u : row == MI_CHFROM ? 2u :
 #if BOARD_SMK37
            row == MI_KVEL ? SMK_KV_N :
 #endif
@@ -208,6 +208,7 @@ static uint32_t menu_get(uint32_t row)
     case MI_CHMODE: return ch_mode();
     case MI_CHNAMES: return ch_names();
     case MI_CHFROM: return ch_from();
+    case MI_CHLEDS: return ch_level() - 1u;
     case MI_HINTS: return ui_hints_off != 0;
     case MI_PREVIEW: return PREVIEW_SET ? 1u : 0u;
     case MI_RETURN: return ret_mode();
@@ -263,6 +264,7 @@ static const char *menu_vname(uint32_t row, uint32_t v)
     case MI_CHMODE: return v == 0u ? "POP" : v == 1u ? "JAZZ" : "FIG BASS";
     case MI_CHNAMES: return v == 0u ? "AUTO" : v == 1u ? "SHARPS" : "FLATS";
     case MI_CHFROM: return v == 0u ? "ALL TRACKS" : "THIS TRACK";
+    case MI_CHLEDS: return v == 0u ? "1 CHORD ONLY" : v == 1u ? "2 + SCALE" : "3 + RESOLVE";
     case MI_LEARN: return ui.ml.on ? "ON" : "";
 #if BOARD_SMK37
     case MI_KVEL: return KVEL_N[v % SMK_KV_N];
@@ -350,6 +352,7 @@ static void menu_put(uint32_t row, uint32_t v)
     case MI_CHMODE: CH_BYTE = (uint8_t)((CH_BYTE & ~3u) | v % 3u); break;                  /* (read every frame: ui_input.c) */
     case MI_CHNAMES: CH_BYTE = (uint8_t)((CH_BYTE & ~12u) | v % 3u << 2); break;
     case MI_CHFROM: CH_BYTE = (uint8_t)((CH_BYTE & ~16u) | (v & 1u) << 4); break;
+    case MI_CHLEDS: CH_BYTE = (uint8_t)((CH_BYTE & ~96u) | ((v % 3u + 2u) % 3u) << 5); break;
     case MI_HINTS: ui_hints_off = (uint8_t)(v & 1u); ui.force = 1; break;
     case MI_PREVIEW:                                   /* ((Skiff 1.3) a bit of CPU2_BYTE) */
         CPU2_BYTE = (uint8_t)(v & 1u ? CPU2_BYTE | 2u : CPU2_BYTE & ~2u);
@@ -404,6 +407,7 @@ static void settings_reset(void)
     menu_put(MI_CHMODE, 0);                            /* (CHORD LIGHTS: POP, names by the key) */
     menu_put(MI_CHNAMES, 0);
     menu_put(MI_CHFROM, 0);
+    menu_put(MI_CHLEDS, 1);
     menu_put(MI_RETURN, RET_BAR);
 #if FELUCCA_CPU2
     menu_put(MI_CPU, CPU2_DEFAULT);                    /* ((2.5) 2 CORES on the FM-1, 1 CORE on the SMK-37: ui.c) */
